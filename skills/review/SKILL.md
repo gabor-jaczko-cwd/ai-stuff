@@ -38,9 +38,10 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 
 **Both modes — check for saved review:**
 - Look for an existing save file in `./tmp/` (see _Save/Continue_ below)
-- If found with `status: in_progress` → ask: _"Found a saved review from \<date\> with N findings. Continue or start fresh?"_
-- If continue: load findings and skip already-reviewed files
-- If start fresh: overwrite the save file
+- If found with `status: in_progress` → ask: _"Found an in-progress review from \<date\> with N findings. Continue or start fresh?"_
+  - If continue: load findings and skip already-reviewed files
+  - If start fresh: discard the in-progress content, reset frontmatter, and start fresh (any previously archived completed reviews in the file are preserved)
+- If found with `status: completed` → proceed with the new review; the previous completed review will be archived in the file when finalized (see _Save/Continue_ below)
 
 **PR mode only — fallback incremental detection:**
 - If no save file exists, check GitHub for a prior review by this agent (enables incremental mode)
@@ -92,7 +93,7 @@ Apply an optional `focus:` hint to go deeper on a specific area.
 
 In PR incremental mode, label each finding as **[NEW]** or **[PREVIOUSLY RAISED]**.
 
-**Finalize save file:** set `status: completed` in the frontmatter.
+**Finalize save file:** set `status: completed` in the frontmatter and prepend the completed report to the file (see _Save/Continue — Finalization_ below).
 
 ### 5. Post-Review Actions
 
@@ -119,7 +120,7 @@ Branch names: replace `/` with `--` in the filename. The real branch name is sto
 
 ### Save file format
 
-Markdown with YAML frontmatter:
+A single YAML frontmatter block is at the very top of the file, always reflecting the **latest** review. Below it, the current review body is written. Any previously completed reviews are archived below a `---` separator, each preceded by an HTML comment timestamp.
 
 ```markdown
 ---
@@ -128,7 +129,7 @@ branch: feature/my-work        # branch mode
 base: origin/master             # branch mode
 pr_number: 42                   # PR mode
 repo: org/repo                  # PR mode
-started: 2026-05-13T10:30:00
+started: 2026-05-14T09:00:00
 status: in_progress | completed
 files_reviewed:
   - app/Models/User.php
@@ -144,20 +145,42 @@ excluded_commits:
 | # | Severity | File | Line | Issue |
 |---|----------|------|------|-------|
 | 1 | 🟡 Warning | `app/Models/User.php` | 42 | Missing eager load... |
+
+---
+
+<!-- reviewed: 2026-05-13T10:30:00 -->
+## Review: `feature/my-work` → `origin/master`
+> **Author(s):** Jacek | **Commits:** 8
+
+### 🔍 Findings
+
+...previous completed review content...
 ```
 
 ### Auto-save behaviour
 
 - **Created** at the start of step 3 (Review) with `status: in_progress`
 - **Updated** after each file is reviewed: new findings appended, file added to `files_reviewed`
-- **Finalized** at end of step 4: `status: completed`, full report replaces the body
+- **Finalized** at end of step 4 (see _Finalization_ below)
+
+### Finalization
+
+When finalizing a review at the end of step 4:
+
+1. Set `status: completed` in the frontmatter and update `started` to reflect the current review's timestamp
+2. Check whether the file contains a previously completed review (a `---` separator followed by a `<!-- reviewed: ... -->` block, **or** a completed review body from a prior run)
+3. If a previous completed review exists in the file: prepend the new completed report above a `---` separator, then add `<!-- reviewed: <previous started timestamp> -->` before the old content
+4. If no previous completed review exists: write the completed report as the file body (standard finalization)
+
+The result is always: **frontmatter → latest completed review → `---` → `<!-- reviewed: ... -->` → older reviews (newest-first)**
 
 ### Continue behaviour
 
-- On startup, check `./tmp/` for a matching save file with `status: in_progress`
-- If found: show the user what's been reviewed so far and ask to continue or start fresh
-- If continuing: load `files_reviewed` and `excluded_commits`, skip those files, resume review
-- Save files with `status: completed` are ignored for continuation (but kept for reference)
+- On startup, check `./tmp/` for a matching save file
+- If found with `status: in_progress`: show the user what's been reviewed so far and ask to continue or start fresh
+  - If continuing: load `files_reviewed` and `excluded_commits`, skip those files, resume review
+  - If start fresh: discard the in-progress frontmatter and review body; preserve any archived completed reviews already in the file; begin a new review
+- If found with `status: completed`: proceed with a new review; the previous completed review will be archived on finalization
 
 ---
 
