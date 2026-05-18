@@ -97,9 +97,29 @@ In PR incremental mode, label each finding as **[NEW]** or **[PREVIOUSLY RAISED]
 
 ### 5. Post-Review Actions
 
-**PR mode only** — after rendering the report, ask:
-1. _"Post these as inline GitHub review comments? (y/n)"_ — if yes, post findings via `pull_request_review_write`
-2. _"Submit the verdict (`APPROVE` / `REQUEST CHANGES` / `COMMENT`) to GitHub? (y/n)"_ — if yes, submit the formal review
+**PR mode only** — after rendering the report, enter a loop:
+
+1. Ask: _"Post to GitHub, or make changes first?"_
+   - **Make changes:** the user may edit the save file directly, or ask for changes in chat (apply them to both the chat display and the save file). Then repeat from step 1.
+   - **Post to GitHub:** proceed below.
+
+2. Re-read the save file as the authoritative source for findings and the final comment.
+
+3. Partition findings into:
+   - **Inline findings** — have both a file path and a line number → will be posted as inline review comments
+   - **Remaining findings** — all others → will appear in the final comment
+
+4. Build the final comment body:
+   - If there are remaining findings, prepend a **"Remaining Findings"** section listing them (same table format as the findings table)
+   - Follow with the full Part 2 content (verdict + rationale, "What's good", "Suggestions")
+
+5. Extract the verdict (APPROVE / REQUEST_CHANGES / COMMENT) from Part 2 of the save file.
+
+6. Post the review:
+   - **If there are inline findings:** create a pending review via `pull_request_review_write`, post each inline finding as a comment on that pending review via `add_comment_to_pending_review` (if any fail, continue with the rest), then submit the pending review with the final comment body and verdict.
+   - **If there are no inline findings:** submit the review directly with the final comment body and verdict.
+
+7. Show a completion summary: number of inline comments posted, number of remaining findings in the final comment. If any inline comments failed to post, list them.
 
 **Branch mode** — no post-review actions. Report is chat-only.
 
@@ -190,7 +210,7 @@ The result is always: **frontmatter → latest completed review → `---` → `<
 - Do not review commits the user has excluded as boilerplate/generated
 - Auto-save after each file reviewed — never lose progress
 - **PR mode only:**
-  - Never post to GitHub without explicit user confirmation
+  - Never post to GitHub without the user explicitly choosing "Post to GitHub" in step 5
   - If CI checks are failing, verdict is forced to `REQUEST CHANGES` (GitHub Actions only — see [REFERENCE.md](REFERENCE.md))
   - In incremental mode, do not re-raise findings already marked resolved
 - **Branch mode only:**
