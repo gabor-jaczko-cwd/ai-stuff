@@ -105,21 +105,26 @@ In PR incremental mode, label each finding as **[NEW]** or **[PREVIOUSLY RAISED]
 
 2. Re-read the save file as the authoritative source for findings and the final comment.
 
-3. Partition findings into:
-   - **Inline findings** — have both a file path and a line number → will be posted as inline review comments
-   - **Remaining findings** — all others → will appear in the final comment
+3. Extract the verdict (APPROVE / REQUEST_CHANGES / COMMENT) from Part 2 of the save file.
 
-4. Build the final comment body:
-   - If there are remaining findings, prepend a **"Remaining Findings"** section listing them (same table format as the findings table)
-   - Follow with the full Part 2 content (verdict + rationale, "What's good", "Suggestions")
+4. **If verdict is APPROVE:**
+   - Build the final comment body:
+     - If there are any findings, prepend a **"Findings"** section listing all of them (same table format as the findings table)
+     - Follow with the full Part 2 content (verdict + rationale, "What's good", "Suggestions")
+   - Submit the review directly with the final comment body and verdict (no inline comments).
+   - Show a completion summary: number of findings in the final comment.
 
-5. Extract the verdict (APPROVE / REQUEST_CHANGES / COMMENT) from Part 2 of the save file.
-
-6. Post the review:
-   - **If there are inline findings:** create a pending review via `pull_request_review_write`, post each inline finding as a comment on that pending review via `add_comment_to_pending_review` (if any fail, continue with the rest), then submit the pending review with the final comment body and verdict.
-   - **If there are no inline findings:** submit the review directly with the final comment body and verdict.
-
-7. Show a completion summary: number of inline comments posted, number of remaining findings in the final comment. If any inline comments failed to post, list them.
+5. **If verdict is REQUEST_CHANGES or COMMENT:**
+   - Partition findings into:
+     - **Inline findings** — have both a file path and a line number → will be posted as inline review comments
+     - **Remaining findings** — all others → will appear in the final comment
+   - Build the final comment body:
+     - If there are remaining findings, prepend a **"Remaining Findings"** section listing them (same table format as the findings table)
+     - Follow with the full Part 2 content (verdict + rationale, "What's good", "Suggestions")
+   - Post the review:
+     - **If there are inline findings:** create a pending review via `pull_request_review_write`, post each inline finding as a comment on that pending review via `add_comment_to_pending_review` (if any fail, continue with the rest), then submit the pending review with the final comment body and verdict.
+     - **If there are no inline findings:** submit the review directly with the final comment body and verdict.
+   - Show a completion summary: number of inline comments posted, number of remaining findings in the final comment. If any inline comments failed to post, list them.
 
 **Branch mode** — no post-review actions. Report is chat-only.
 
