@@ -20,7 +20,14 @@
 | 2 | 🟡 Warning  | `path/to/file.php` | 17 | Description. |
 | 3 | 🔵 Nit      | `path/to/file.php` | 5  | Description. |
 
-*Findings labelled [NEW] / [PREVIOUSLY RAISED] in incremental mode.*
+*Findings labelled [NEW] / [PREVIOUSLY RAISED] in incremental mode. [RESOLVED] findings appear below.*
+
+<!-- Incremental mode only — omit if no resolved findings -->
+### ✅ Resolved since last review
+
+| # | Severity | File | Line | Issue |
+|---|----------|------|------|-------|
+| 1 | 🟡 Warning | `path/to/file.php` | 17 | <original issue — now fixed> |
 
 ### 🏁 Recommended Verdict: <✅ APPROVE | 🔄 REQUEST CHANGES | 💬 COMMENT ONLY>
 <Rationale for the recommended verdict, referencing the findings above.>

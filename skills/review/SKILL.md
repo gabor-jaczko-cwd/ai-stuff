@@ -45,6 +45,7 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 
 **PR mode only — fallback incremental detection:**
 - If no save file exists, check GitHub for a prior review by this agent (enables incremental mode)
+- In incremental mode: fetch all inline review comments from the previous review and record their `comment_id` → finding mapping (file + line + excerpt), so resolved findings can be replied to in step 5
 
 ### 2. Assess Scope
 
@@ -70,6 +71,8 @@ Work through the diff applying the core checklist (see [REFERENCE.md](REFERENCE.
 
 Apply an optional `focus:` hint to go deeper on a specific area.
 
+**In incremental mode — check for resolved findings:** For each previously raised finding, inspect the new diff to determine whether the concern has been addressed (the code at that location was changed to fix the issue, or the flagged pattern no longer exists). Label resolved findings `[RESOLVED]` and record their previous `comment_id` if available.
+
 **Auto-save:** after reviewing each file, update the save file with new findings and mark the file as reviewed (see _Save/Continue_ below).
 
 ### 4. Produce Report
@@ -91,7 +94,7 @@ Apply an optional `focus:` hint to go deeper on a specific area.
 | 🔴 Critical findings (or CI failing in PR mode, or secrets detected) | 🔄 REQUEST CHANGES | 🔄 NEEDS WORK |
 | Observations only, no hard blockers | 💬 COMMENT ONLY | 💬 LOOKS OK |
 
-In PR incremental mode, label each finding as **[NEW]** or **[PREVIOUSLY RAISED]**.
+In PR incremental mode, label each finding as **[NEW]**, **[PREVIOUSLY RAISED]**, or **[RESOLVED]**. Render `[RESOLVED]` findings in a separate **"✅ Resolved since last review"** section below the main findings table — do not include them as active findings or let them affect the verdict.
 
 **Finalize save file:** set `status: completed` in the frontmatter and prepend the completed report to the file (see _Save/Continue — Finalization_ below).
 
@@ -124,7 +127,8 @@ In PR incremental mode, label each finding as **[NEW]** or **[PREVIOUSLY RAISED]
    - Post the review:
      - **If there are inline findings:** create a pending review via `pull_request_review_write`, post each inline finding as a comment on that pending review via `add_comment_to_pending_review` (if any fail, continue with the rest), then submit the pending review with the final comment body and verdict.
      - **If there are no inline findings:** submit the review directly with the final comment body and verdict.
-   - Show a completion summary: number of inline comments posted, number of remaining findings in the final comment. If any inline comments failed to post, list them.
+   - **Incremental mode — resolve addressed threads:** after submitting the review, for each `[RESOLVED]` finding that has a recorded `comment_id` from the previous review, post a reply via `add_reply_to_pull_request_comment` with the body `"✅ Addressed."`. If any replies fail, continue with the rest.
+   - Show a completion summary: number of inline comments posted, number of remaining findings in the final comment, number of resolved threads replied to. If any inline comments or resolution replies failed, list them.
 
 **Branch mode** — no post-review actions. Report is chat-only.
 
@@ -218,6 +222,7 @@ The result is always: **frontmatter → latest completed review → `---` → `<
   - Never post to GitHub without the user explicitly choosing "Post to GitHub" in step 5
   - If CI checks are failing, verdict is forced to `REQUEST CHANGES` (GitHub Actions only — see [REFERENCE.md](REFERENCE.md))
   - In incremental mode, do not re-raise findings already marked resolved
+  - In incremental mode, actively check whether previously raised findings have been fixed; label them `[RESOLVED]` and reply to their inline comment threads after posting
 - **Branch mode only:**
   - Use only local `git` commands — no GitHub API calls
   - Run `git fetch` before resolving remote branches
