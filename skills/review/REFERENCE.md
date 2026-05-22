@@ -22,6 +22,14 @@
 
 *Findings labelled [NEW] / [PREVIOUSLY RAISED] in incremental mode. [RESOLVED] findings appear below.*
 
+<!-- Omit if no unverified findings -->
+### ⚠️ Unverified Findings
+*These findings could not be fully validated (cross-file dependencies, deleted files, or runtime behaviour). Review manually.*
+
+| # | Severity | File | Line | Issue |
+|---|----------|------|------|-------|
+| 1 | 🟡 Warning | `path/to/file.php` | 17 | <issue — could not be confirmed or dismissed> |
+
 <!-- Incremental mode only — omit if no resolved findings -->
 ### ✅ Resolved since last review
 
@@ -45,7 +53,7 @@ This is the body posted to GitHub when the formal review is submitted. Render it
 ### ✅ What's good
 - <Positive callout>
 - <Positive callout>
-<!-- This section can be omitted for very small PRs with no clear positives, but aim to include at least 1–2 points for larger PRs to encourage good practices. -->
+<!-- Aim for at least 1–2 points for larger PRs; can omit for very small PRs with no clear positives -->
 
 ### 💡 Suggestions (non-blocking)
 - <Optional improvement>
@@ -71,24 +79,109 @@ This is the body posted to GitHub when the formal review is submitted. Render it
 
 *No findings — branch looks clean.* <!-- use if findings table is empty -->
 
+<!-- Omit if no unverified findings -->
+### ⚠️ Unverified Findings
+*These findings could not be fully validated (cross-file dependencies, deleted files, or runtime behaviour). Review manually.*
+
+| # | Severity | File | Line | Issue |
+|---|----------|------|------|-------|
+| 1 | 🟡 Warning | `path/to/file.php` | 17 | <issue — could not be confirmed or dismissed> |
+
 ### 🏁 Verdict: <✅ READY TO MERGE | 🔄 NEEDS WORK | 💬 LOOKS OK>
 <Rationale for the verdict, referencing the findings above.>
 
 ### 💡 Suggestions / Further Considerations
 - <Forward-looking idea, new feature, performance optimisation, tech choice, or architectural improvement>
-- <Another idea>
 <!-- Omit this section if there is genuinely nothing to add -->
 ```
 
 ---
 
-## Severity Levels
+## Subagent Prompt Template
 
-| Icon | Label | Meaning | Effect on Verdict |
-|------|-------|---------|-------------------|
-| 🔴 | Critical | Must fix before merge (bugs, security, secrets, broken tests) | Forces `REQUEST CHANGES` / `NEEDS WORK` |
-| 🟡 | Warning | Should fix (code smell, missing test, perf issue) | Nudges toward `REQUEST CHANGES` / `NEEDS WORK` |
-| 🔵 | Nit | Optional improvement (style, naming preference) | No effect |
+Use this template when spawning a review+triage subagent for a logical file group. Fill in the bracketed sections from the orchestrator's context.
+
+```
+You are a code reviewer. Your job is to review a specific group of changed files, then immediately triage your own findings.
+
+## Project Context
+
+[INSERT FULL PROJECT CONTEXT BUNDLE HERE — CLAUDE.md, README.md, and all discovered docs/agent files verbatim]
+
+## What Else Changed (Full Diff Stat)
+
+[INSERT git diff --stat OR GitHub diff stat summary here]
+
+## Your Group
+
+You are responsible for the following files:
+[LIST FILES IN THIS GROUP]
+
+## Diffs for Your Group
+
+[INSERT RAW DIFFS FOR EACH FILE IN THE GROUP]
+
+[IN INCREMENTAL MODE: INSERT]
+## Prior Findings for Your Group
+The following findings were raised in the previous review for files in your group.
+Check whether each has been addressed in the new diff.
+[LIST PRIOR FINDINGS WITH comment_id, file, line, excerpt]
+
+## Focus
+[INSERT focus: hint if provided, otherwise omit this section]
+
+---
+
+## Instructions
+
+### Pass 1 — Review
+
+Review the diffs above using the core checklist below. Consider the full project context when evaluating each file. Generate candidate findings — cast a wide net, you will triage them next.
+
+For each candidate finding record:
+- File path and line number (if applicable)
+- Recommended severity (🔴 Critical / 🟡 Warning / 🔵 Nit)
+- Description of the issue
+
+In incremental mode: for each prior finding, check whether the concern has been addressed. Label addressed ones [RESOLVED].
+
+### Pass 2 — Triage
+
+For each candidate finding:
+1. Read the **full file** (not just the diff) for the file containing the finding
+2. Read any related files needed to validate the finding (base classes, interfaces, callers, tests)
+3. Decide: **CONFIRM**, **DISMISS** (with reason), or **UNVERIFIED** (cannot be confirmed or dismissed — cross-file dependency outside your group, deleted file, runtime behaviour)
+4. Set the **final severity** (may differ from recommended)
+
+Be strict: dismiss findings where reading the full context shows the code is correct. Only confirm findings where there is a clear, demonstrable issue.
+
+### Output
+
+Return three structured sections:
+
+**CONFIRMED FINDINGS**
+| # | Severity | File | Line | Issue |
+|---|----------|------|------|-------|
+| ... |
+
+**DISMISSED FINDINGS**
+| # | File | Line | Reason for dismissal |
+|---|------|------|----------------------|
+| ... |
+
+**UNVERIFIED FINDINGS**
+| # | Severity | File | Line | Issue | Why unverified |
+|---|----------|------|------|-------|----------------|
+| ... |
+
+[IN INCREMENTAL MODE ALSO RETURN:]
+**RESOLVED FINDINGS**
+| # | comment_id | File | Line | Original issue |
+|---|------------|------|------|----------------|
+| ... |
+
+If a section is empty, write "None."
+```
 
 ---
 
@@ -102,7 +195,7 @@ This is the body posted to GitHub when the formal review is submitted. Render it
 ### Security
 - [ ] No secrets, credentials, or tokens committed (API keys, passwords, `.env` values)
 - [ ] No SQL injection vectors (raw queries without binding)
-- [ ] No mass-assignment vulnerabilities (`$fillable` / `$guarded` correct)
+- [ ] No mass-assignment vulnerabilities
 - [ ] No unauthenticated routes exposing sensitive data
 - [ ] File uploads validated (type, size, storage path)
 
@@ -112,24 +205,30 @@ This is the body posted to GitHub when the formal review is submitted. Render it
 - [ ] Authorization tested (403 for unauthorised users)
 - [ ] No new feature without a test
 
-### Project Conventions (from CLAUDE.md)
-- [ ] Livewire 2 patterns used (`wire:model`, `$this->emit()`, `$listeners`)
-- [ ] Bootstrap 5 only (no Bootstrap 4 classes, no inline styles)
-- [ ] No jQuery, no Vue
-- [ ] New views use `main-bs5.blade.php` layout
-- [ ] Vite used (not `webpack.mix.js`)
-- [ ] Auth0 patterns followed
-- [ ] No Spire/ShipsDNA references (deprecated)
+### Project Conventions
+- [ ] Patterns and conventions from the injected project context (CLAUDE.md, loaded agent/skill files) are followed
+- [ ] No violations of documented architectural decisions
 
 ### Database
 - [ ] Migrations present for schema changes
 - [ ] No N+1 queries (eager loading where needed)
-- [ ] PostGIS used correctly for spatial queries
+- [ ] Indexes present for new frequently-queried columns
 
 ### Naming & Readability
 - [ ] Method and variable names are clear and consistent
 - [ ] No dead code or commented-out blocks left in
 - [ ] No unnecessary complexity
+- [ ] No debug statements left in (e.g. `dd()`, `console.log`, `var_dump`, `print_r`)
+
+---
+
+## Severity Levels
+
+| Icon | Label | Meaning | Effect on Verdict |
+|------|-------|---------|-------------------|
+| 🔴 | Critical | Must fix before merge (bugs, security, secrets, broken tests) | Forces `REQUEST CHANGES` / `NEEDS WORK` |
+| 🟡 | Warning | Should fix — requires a demonstrable negative consequence (a bug that can occur, a security gap, a measurable perf hit) | Nudges toward `REQUEST CHANGES` / `NEEDS WORK` |
+| 🔵 | Nit | Optional improvement (style, naming preference, structure with no functional impact) | No effect |
 
 ---
 
@@ -137,13 +236,11 @@ This is the body posted to GitHub when the formal review is submitted. Render it
 
 The skill fetches PR check runs via the GitHub API and displays their status in the PR summary header.
 
-> ⚠️ **Note:** CI status checking requires GitHub Actions. If the project uses an **external CI provider** (e.g. Jenkins, CircleCI) that does not report status checks back to GitHub, the CI field will show `⚠️ unknown` and the skill cannot factor CI results into the verdict. This will be resolved once the project migrates its CI pipeline to GitHub Actions.
+> ⚠️ **Note:** CI status checking requires GitHub Actions. If the project uses an **external CI provider** (e.g. Jenkins, CircleCI) that does not report status checks back to GitHub, the CI field will show `⚠️ unknown` and the skill cannot factor CI results into the verdict.
 
 ---
 
 ## Commit Group Types
-
-When grouping commits by type, use these categories:
 
 | Type | Examples | Reviewable? |
 |------|----------|-------------|
@@ -179,4 +276,3 @@ git --no-pager diff <base>...<branch>
 # Stat summary
 git --no-pager diff --stat <base>...<branch>
 ```
-
