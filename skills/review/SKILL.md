@@ -60,7 +60,7 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
   - **PR mode:** fetch commit list via GitHub API — **in incremental mode, only commits pushed after the last review**
   - **Branch mode:** `git --no-pager log <base>..<branch> --oneline`
 - Group commits by type: feature, fix, refactor, boilerplate/generated/reformatted (see [REFERENCE.md](REFERENCE.md))
-- Get the diff:
+- Get the full diff and diff stat (one fetch/call):
   - **PR mode:** fetch via GitHub API (scoped to the commits above)
   - **Branch mode:** `git --no-pager diff <base>...<branch>`
 - **Group changed files into logical slices** using your judgement:
@@ -69,6 +69,10 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
   - Aim for 2–8 files per group; large standalone files may warrant their own group
   - Boilerplate/generated/reformatted files that will be skipped need not be grouped
 - **If diff exceeds ~500 changed lines:** present the commit groups and proposed file grouping to the user and ask if any commits or groups should be excluded before proceeding
+- **Write diffs to temp files** under `./tmp/review-<pr-number|branch-name>/`:
+  - `stat.diff` — the full diff stat summary
+  - `group-1.diff`, `group-2.diff`, … — one file per logical group, containing only the diffs for that group's files
+  - Pass each subagent its group's file path; the orchestrator does not hold diff content in context after this point
 
 ### 4. Spawn Review+Triage Subagents
 
@@ -76,8 +80,8 @@ For each logical group, spawn a **review+triage subagent** using the Agent tool 
 
 **Inject into each subagent's prompt:**
 - The full **project context bundle** (CLAUDE.md, README.md, all discovered docs and agent files)
-- The **group's file list** and their diffs
-- The **full diff stat** (so the subagent knows what else changed outside its group)
+- The **group's file list**
+- The path to the group's diff file (`./tmp/review-.../group-N.diff`) and the stat file (`./tmp/review-.../stat.diff`)
 - The optional `focus:` hint if provided
 - **In incremental mode:** prior findings for files in this group, with their `comment_id`s
 

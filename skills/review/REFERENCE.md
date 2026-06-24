@@ -175,18 +175,17 @@ You are a code reviewer. Your job is to review a specific group of changed files
 
 [INSERT FULL PROJECT CONTEXT BUNDLE HERE — CLAUDE.md, README.md, and all discovered docs/agent files verbatim]
 
-## What Else Changed (Full Diff Stat)
-
-[INSERT git diff --stat OR GitHub diff stat summary here]
-
 ## Your Group
 
 You are responsible for the following files:
 [LIST FILES IN THIS GROUP]
 
-## Diffs for Your Group
+## Diffs
 
-[INSERT RAW DIFFS FOR EACH FILE IN THE GROUP]
+Your group's diff is at: [PATH TO group-N.diff]
+The full diff stat is at: [PATH TO stat.diff]
+
+Read both files before starting your review. The diff stat shows what changed outside your group so you have context on the broader scope of the PR.
 
 [IN INCREMENTAL MODE: INSERT]
 ## Prior Findings for Your Group
