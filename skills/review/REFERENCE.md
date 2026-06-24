@@ -204,6 +204,8 @@ Check whether each has been addressed in the new diff.
 
 Review the diffs above using the core checklist below. Consider the full project context when evaluating each file. Generate candidate findings — cast a wide net, you will triage them next.
 
+If a **Focus** hint is provided: apply extra depth and scrutiny to that area, but do not suppress findings outside it — a Critical bug found outside the focus area must still be reported.
+
 For each candidate finding record:
 - File path and line number (if applicable)
 - Recommended severity (🔴 Critical / 🟡 Warning / 🔵 Nit)
