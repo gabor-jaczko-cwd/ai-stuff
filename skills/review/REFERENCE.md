@@ -20,7 +20,7 @@
 | 2 | 🟡 Warning  | `path/to/file.php` | 17 | Description. |
 | 3 | 🔵 Nit      | `path/to/file.php` | 5  | Description. |
 
-*Findings labelled [NEW] / [PREVIOUSLY RAISED] in incremental mode. [RESOLVED] findings appear below.*
+*In incremental mode, active findings are [NEW] only. Previously raised and resolved findings appear in the sections below.*
 
 <!-- Omit if no unverified findings -->
 ### ⚠️ Unverified Findings
@@ -29,6 +29,14 @@
 | # | Severity | File | Line | Issue |
 |---|----------|------|------|-------|
 | 1 | 🟡 Warning | `path/to/file.php` | 17 | <issue — could not be confirmed or dismissed> |
+
+<!-- Incremental mode only — omit if no previously raised findings -->
+### ⏳ Still open from last review
+*These findings were raised in the previous review and have not been addressed. They do not affect this review's verdict.*
+
+| # | Severity | File | Line | Issue |
+|---|----------|------|------|-------|
+| 1 | 🟡 Warning | `path/to/file.php` | 17 | <original issue — still present> |
 
 <!-- Incremental mode only — omit if no resolved findings -->
 ### ✅ Resolved since last review

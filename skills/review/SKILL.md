@@ -123,7 +123,10 @@ The subagent returns a final confirmed list, an updated dismissed list (with cro
 | 🔴 Critical findings (or CI failing in PR mode, or secrets detected) | 🔄 REQUEST CHANGES | 🔄 NEEDS WORK |
 | Observations only, no hard blockers | 💬 COMMENT ONLY | 💬 LOOKS OK |
 
-In PR incremental mode, label each finding as **[NEW]**, **[PREVIOUSLY RAISED]**, or **[RESOLVED]**. Render `[RESOLVED]` findings in a separate **"✅ Resolved since last review"** section — do not include them as active findings or let them affect the verdict.
+In PR incremental mode, label each finding as **[NEW]**, **[PREVIOUSLY RAISED]**, or **[RESOLVED]**:
+- **[NEW]** findings go in the active findings table and affect the verdict normally.
+- **[PREVIOUSLY RAISED]** findings are moved to a separate **"⏳ Still open from last review"** section and do **not** affect the verdict — the previous review already set that expectation.
+- **[RESOLVED]** findings go in a separate **"✅ Resolved since last review"** section and do not affect the verdict.
 
 **Write the save file** with `status: completed` (see _Save/Continue_ below).
 
