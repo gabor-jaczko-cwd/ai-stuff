@@ -56,23 +56,28 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 
 ### 3. Assess Scope
 
+**a) Classify commits** — determines what to review (skip decision):
 - Fetch/list the commits:
   - **PR mode:** fetch commit list via GitHub API — **in incremental mode, only commits pushed after the last review**
   - **Branch mode:** `git --no-pager log <base>..<branch> --oneline`
-- Group commits by type: feature, fix, refactor, boilerplate/generated/reformatted (see [REFERENCE.md](REFERENCE.md))
-- Get the full diff and diff stat (one fetch/call):
-  - **PR mode:** fetch via GitHub API (scoped to the commits above)
-  - **Branch mode:** `git --no-pager diff <base>...<branch>`
-- **Group changed files into logical slices** using your judgement:
-  - Group files that are closely related: a service + its callers + its tests, a controller + its form request + its policy, a model + its migration + its factory
-  - Each group should be coherent enough for a subagent to detect cross-file issues within it
-  - Aim for 2–8 files per group; large standalone files may warrant their own group
-  - Boilerplate/generated/reformatted files that will be skipped need not be grouped
-- **If diff exceeds ~500 changed lines:** present the commit groups and proposed file grouping to the user and ask if any commits or groups should be excluded before proceeding
-- **Write diffs to temp files** under `./tmp/review-<pr-number|branch-name>/`:
-  - `stat.diff` — the full diff stat summary
-  - `group-1.diff`, `group-2.diff`, … — one file per logical group, containing only the diffs for that group's files
-  - Pass each subagent its group's file path; the orchestrator does not hold diff content in context after this point
+- Classify each commit by type: feature, fix, refactor, boilerplate/generated/reformatted (see [REFERENCE.md](REFERENCE.md))
+- Boilerplate/generated/reformatted commits are candidates for exclusion — confirm with the user if large
+
+**b) Get the diff** — one fetch/call covering only the commits being reviewed:
+- **PR mode:** fetch via GitHub API
+- **Branch mode:** `git --no-pager diff <base>...<branch>`
+- **If diff exceeds ~500 changed lines:** present the commit classification and changed file list to the user and ask if any commits should be excluded before proceeding
+
+**c) Group changed files for subagents** — independent of commit classification; a single commit can span multiple groups, and multiple commits often touch the same files:
+- Group files that are closely related by domain: a service + its callers + its tests, a controller + its form request + its policy, a model + its migration + its factory
+- Each group should be coherent enough for a subagent to detect cross-file issues within it
+- Aim for 2–8 files per group; large standalone files may warrant their own group
+- Files from excluded commits need not be grouped
+
+**d) Write diffs to temp files** under `./tmp/review-<pr-number|branch-name>/`:
+- `stat.diff` — the full diff stat summary
+- `group-1.diff`, `group-2.diff`, … — one file per logical group, containing only the diffs for that group's files
+- Pass each subagent its group's file path; the orchestrator does not hold diff content in context after this point
 
 ### 4. Spawn Review+Triage Subagents
 
