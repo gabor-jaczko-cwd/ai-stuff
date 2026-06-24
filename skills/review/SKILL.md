@@ -90,7 +90,7 @@ For each logical group, spawn a **review+triage subagent** using the Agent tool 
 - The optional `focus:` hint if provided
 - **In incremental mode:** prior findings for files in this group, with their `comment_id`s
 
-**Spawn all group subagents in parallel.** Collect all three lists (confirmed, dismissed, unverified) as each completes.
+**Spawn all group subagents in parallel.** Collect all three lists (confirmed, dismissed, unverified) as each completes. **In incremental mode:** extract any `[PREVIOUSLY RAISED]` findings from the confirmed list and hold them separately — they will be reattached after the coherence pass and must not be sent to the coherence subagent.
 
 Each subagent will:
 1. Review the changed files in its group against the core checklist and injected project context — generating candidate findings with recommended severity
@@ -104,10 +104,10 @@ Each subagent will:
 Spawn a **coherence subagent** (see **Coherence Subagent Prompt Template** in [REFERENCE.md](REFERENCE.md)).
 
 **Inject into the subagent's prompt:**
-- All confirmed, unverified, and dismissed findings from every group (labelled by group)
+- All confirmed (`[NEW]` only), unverified, and dismissed findings from every group (labelled by group)
 - The full diff stat
 
-The subagent returns a final confirmed list, an updated dismissed list (with cross-group reasons), and any new cross-group findings. Use its output as the authoritative finding set for the report.
+The subagent returns a final confirmed list, an updated dismissed list (with cross-group reasons), and any new cross-group findings. Reattach the held `[PREVIOUSLY RAISED]` findings to the confirmed list after receiving the coherence subagent's output. Use the combined result as the authoritative finding set for the report.
 
 ### 6. Produce Report
 
