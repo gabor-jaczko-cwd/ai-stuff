@@ -101,6 +101,8 @@ Each subagent will:
 
 ### 5. Cross-Group Coherence Pass
 
+**If there is only one group, skip this step** — use the subagent's output directly as the authoritative finding set and proceed to Step 6.
+
 Spawn a **coherence subagent** (see **Coherence Subagent Prompt Template** in [REFERENCE.md](REFERENCE.md)).
 
 **Inject into the subagent's prompt:**
