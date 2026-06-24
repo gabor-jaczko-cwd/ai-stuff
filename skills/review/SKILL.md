@@ -22,7 +22,18 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 
 ## Workflow
 
-### 1. Gather Context
+### 1. Determine Scope
+
+**Parse the input** to identify PR vs Branch mode and extract identifiers:
+- **PR mode:** parse `owner`, `repo`, `pull_number` from the PR reference
+- **Branch mode:** always a full review — skip the rest of this step
+
+**PR mode — incremental detection (do this before fetching anything else):**
+1. Check for a local save file (`./tmp/review-pr-<number>.md`) — incremental if found
+2. If no save file: check GitHub for a prior review submitted by this agent on the PR — incremental if found
+3. **If incremental:** fetch all inline review comments from the previous review and record their `comment_id` → finding mapping (file + line + excerpt), so resolved findings can be replied to later
+
+### 2. Gather Context
 
 **Project context discovery (both modes):**
 - Load `CLAUDE.md` and `README.md` from the repo root if present
@@ -35,9 +46,7 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 - Build a **project context bundle** — this will be injected verbatim into every subagent prompt
 
 **PR mode:**
-- Parse `owner`, `repo`, `pull_number` from the PR reference
 - Fetch PR metadata: title, description, base branch, author, CI status
-- Check for prior review by this agent on GitHub (enables incremental mode — see below)
 
 **Branch mode:**
 - Resolve the **branch**: if provided use it, otherwise `git rev-parse --abbrev-ref HEAD`
@@ -45,18 +54,14 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 - Run `git fetch` to ensure remote refs are up to date
 - Extract metadata: author(s), commit count (see [REFERENCE.md](REFERENCE.md) for git commands)
 
-**PR mode only — incremental detection:**
-- If no save file exists, check GitHub for a prior review by this agent
-- In incremental mode: fetch all inline review comments from the previous review and record their `comment_id` → finding mapping (file + line + excerpt), so resolved findings can be replied to later
-
-### 2. Assess Scope
+### 3. Assess Scope
 
 - Fetch/list the commits:
-  - **PR mode:** fetch commit list via GitHub API
+  - **PR mode:** fetch commit list via GitHub API — **in incremental mode, only commits pushed after the last review**
   - **Branch mode:** `git --no-pager log <base>..<branch> --oneline`
 - Group commits by type: feature, fix, refactor, boilerplate/generated/reformatted (see [REFERENCE.md](REFERENCE.md))
 - Get the diff:
-  - **PR mode:** fetch via GitHub API
+  - **PR mode:** fetch via GitHub API (scoped to the commits above)
   - **Branch mode:** `git --no-pager diff <base>...<branch>`
 - **Group changed files into logical slices** using your judgement:
   - Group files that are closely related: a service + its callers + its tests, a controller + its form request + its policy, a model + its migration + its factory
@@ -64,9 +69,8 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
   - Aim for 2–8 files per group; large standalone files may warrant their own group
   - Boilerplate/generated/reformatted files that will be skipped need not be grouped
 - **If diff exceeds ~500 changed lines:** present the commit groups and proposed file grouping to the user and ask if any commits or groups should be excluded before proceeding
-- **In incremental mode (PR mode):** only include commits pushed after the last review
 
-### 3. Spawn Review+Triage Subagents
+### 4. Spawn Review+Triage Subagents
 
 For each logical group, spawn a **review+triage subagent** using the Agent tool (see **Subagent Prompt Template** in [REFERENCE.md](REFERENCE.md)).
 
@@ -86,7 +90,7 @@ Each subagent will:
 
 **In incremental mode:** subagents also check whether previously raised findings in their group have been addressed, labelling them `[RESOLVED]` if so.
 
-### 4. Cross-Group Coherence Pass
+### 5. Cross-Group Coherence Pass
 
 After all subagents complete, merge all confirmed and unverified findings. Then review the merged results alongside the full diff stat for issues that span groups:
 - Type, interface, or contract changes in one group affecting callers in another
@@ -95,7 +99,7 @@ After all subagents complete, merge all confirmed and unverified findings. Then 
 
 Add any cross-group findings directly to the confirmed findings list.
 
-### 5. Produce Report
+### 6. Produce Report
 
 **PR mode** — render both parts from [REFERENCE.md](REFERENCE.md):
 1. **Part 1 — Findings**: PR header, summary, findings table, unverified findings section (if any)
@@ -118,7 +122,7 @@ In PR incremental mode, label each finding as **[NEW]**, **[PREVIOUSLY RAISED]**
 
 **Write the save file** with `status: completed` (see _Save/Continue_ below).
 
-### 6. Post-Review Actions
+### 7. Post-Review Actions
 
 **PR mode only** — after rendering the report, enter a loop:
 
