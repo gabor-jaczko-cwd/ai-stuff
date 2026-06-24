@@ -130,23 +130,15 @@ In PR incremental mode, label each finding as **[NEW]**, **[PREVIOUSLY RAISED]**
 
 3. Extract the verdict (APPROVE / REQUEST_CHANGES / COMMENT) from Part 2 of the save file.
 
-4. **If verdict is APPROVE:**
-   - Build the final comment body:
-     - If there are any findings, prepend a **"Findings"** section listing all of them (same table format)
-     - Follow with the full Part 2 content
-   - Submit the review directly with the final comment body and verdict.
-   - Show a completion summary: number of findings in the final comment.
+4. **Build the final comment body (all verdicts):**
+   - If there are any findings, prepend a **"Findings"** section listing all of them (same table format)
+   - Follow with the full Part 2 content
 
-5. **If verdict is REQUEST_CHANGES or COMMENT:**
-   - Partition findings into **inline findings** (have file path + line number) and **remaining findings** (all others)
-   - Build the final comment body:
-     - If there are remaining findings, prepend a **"Remaining Findings"** section
-     - Follow with the full Part 2 content
-   - Post the review:
-     - **If there are inline findings:** create a pending review, post each as an inline comment, then submit with the final comment body and verdict
-     - **If no inline findings:** submit directly
+5. **Post the review:**
+   - **If verdict is REQUEST_CHANGES or COMMENT and there are inline findings** (file path + line number): create a pending review, post each as an inline comment, then submit with the final comment body and verdict
+   - **Otherwise:** submit directly with the final comment body and verdict
    - **Incremental mode — resolve addressed threads:** for each `[RESOLVED]` finding with a recorded `comment_id`, post a reply `"✅ Addressed."` to that thread
-   - Show a completion summary: inline comments posted, remaining findings in final comment, resolved threads replied to. List any failures.
+   - Show a completion summary: inline comments posted (if any), findings in final comment, resolved threads replied to. List any failures.
 
 **Branch mode** — no post-review actions. Report is chat-only.
 
