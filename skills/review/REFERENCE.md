@@ -264,7 +264,6 @@ Return three structured sections:
 | ... |
 
 If a section is empty, write "None."
-```
 
 ---
 
@@ -302,6 +301,7 @@ If a section is empty, write "None."
 - [ ] No dead code or commented-out blocks left in
 - [ ] No unnecessary complexity
 - [ ] No debug statements left in (e.g. `dd()`, `console.log`, `var_dump`, `print_r`)
+```
 
 ---
 
