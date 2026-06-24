@@ -36,14 +36,13 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 ### 2. Gather Context
 
 **Project context discovery (both modes):**
-- Load `CLAUDE.md` and `README.md` from the repo root if present
+- Load `CLAUDE.md` and `README.md` from the repo root if present — these are always injected verbatim into every subagent
 - Parse both files for references to:
   - Tech stack documentation or design docs
   - Area-specific reviewer agents (`.claude/agents/*.md`)
   - Project-specific skill files (`.claude/skills/*/SKILL.md`)
   - Any other linked conventions or architecture docs
-- Load all referenced files as additional context
-- Build a **project context bundle** — this will be injected verbatim into every subagent prompt
+- Collect the paths of all referenced files — **do not load them**; subagents will read whichever ones are relevant to their group on demand
 
 **PR mode:**
 - Fetch PR metadata: title, description, base branch, author, CI status
@@ -84,7 +83,8 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 For each logical group, spawn a **review+triage subagent** using the Agent tool (see **Subagent Prompt Template** in [REFERENCE.md](REFERENCE.md)).
 
 **Inject into each subagent's prompt:**
-- The full **project context bundle** (CLAUDE.md, README.md, all discovered docs and agent files)
+- **CLAUDE.md** and **README.md** verbatim (always)
+- A **list of available context docs** (paths only — the subagent reads whichever are relevant)
 - The **group's file list**
 - The path to the group's diff file (`./tmp/review-.../group-N.diff`) and the stat file (`./tmp/review-.../stat.diff`)
 - The optional `focus:` hint if provided

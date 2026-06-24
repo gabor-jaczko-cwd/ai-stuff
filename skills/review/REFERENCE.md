@@ -188,7 +188,15 @@ You are a code reviewer. Your job is to review a specific group of changed files
 
 ## Project Context
 
-[INSERT FULL PROJECT CONTEXT BUNDLE HERE — CLAUDE.md, README.md, and all discovered docs/agent files verbatim]
+[INSERT CLAUDE.md VERBATIM]
+
+[INSERT README.md VERBATIM]
+
+## Available Context Docs
+
+The following additional project docs are available. Read whichever are relevant to the files in your group — ignore the rest.
+
+[LIST PATHS TO DISCOVERED DOCS/AGENT FILES]
 
 ## Your Group
 
