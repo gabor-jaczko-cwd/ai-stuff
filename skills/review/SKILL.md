@@ -81,7 +81,7 @@ For each logical group, spawn a **review+triage subagent** using the Agent tool 
 - The optional `focus:` hint if provided
 - **In incremental mode:** prior findings for files in this group, with their `comment_id`s
 
-**Spawn all group subagents in parallel.** Collect findings as each completes.
+**Spawn all group subagents in parallel.** Collect all three lists (confirmed, dismissed, unverified) as each completes.
 
 Each subagent will:
 1. Review the changed files in its group against the core checklist and injected project context — generating candidate findings with recommended severity
@@ -92,7 +92,7 @@ Each subagent will:
 
 ### 5. Cross-Group Coherence Pass
 
-After all subagents complete, merge all confirmed and unverified findings. Review the merged results as a whole — the primary job is **false-positive reduction**: look for findings that appear valid in isolation but are contradicted by what another group's subagent saw.
+After all subagents complete, merge all confirmed, unverified, and dismissed findings. Review the merged results as a whole — the primary job is **false-positive reduction**: look for findings that appear valid in isolation but are contradicted by what another group's subagent saw. Also review dismissed findings: a finding dismissed by one subagent may be contradicted by another group's diff (it was right to raise but wrong to dismiss).
 
 **Dismiss findings where:**
 - One group flagged a change (e.g. an interface update) but another group's diff shows the callers were already updated
