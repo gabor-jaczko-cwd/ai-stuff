@@ -131,7 +131,7 @@ In PR incremental mode, label each finding as **[NEW]**, **[PREVIOUSLY RAISED]**
    - **Make changes:** the user may edit the save file directly, or ask for changes in chat (apply them to both the chat display and the save file). Then repeat from step 1.
    - **Post to GitHub:** proceed below.
 
-2. Re-read the save file as the authoritative source for findings and the final comment.
+2. Re-read the save file to pick up any edits the user made between review and posting — findings pruned, language softened, verdict changed.
 
 3. Extract the verdict (APPROVE / REQUEST_CHANGES / COMMENT) from Part 2 of the save file.
 
