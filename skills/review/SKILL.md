@@ -92,12 +92,19 @@ Each subagent will:
 
 ### 5. Cross-Group Coherence Pass
 
-After all subagents complete, merge all confirmed and unverified findings. Then review the merged results alongside the full diff stat for issues that span groups:
-- Type, interface, or contract changes in one group affecting callers in another
-- Shared config or constants changed in one group with downstream effects in another
-- Patterns that appear acceptable in isolation but indicate a systemic problem across groups
+After all subagents complete, merge all confirmed and unverified findings. Review the merged results as a whole — the primary job is **false-positive reduction**: look for findings that appear valid in isolation but are contradicted by what another group's subagent saw.
 
-Add any cross-group findings directly to the confirmed findings list.
+**Dismiss findings where:**
+- One group flagged a change (e.g. an interface update) but another group's diff shows the callers were already updated
+- A concern was raised about missing handling that another group's files already provide
+- The same issue was flagged from two sides but the combined picture shows it's resolved
+
+**Also look for genuine cross-group issues** (secondary):
+- Contract or type changes in one group with unupdated callers in another
+- Shared config or constants changed with downstream effects not reflected elsewhere
+- A pattern acceptable in isolation that reveals a systemic problem across groups
+
+Move dismissed findings to the dismissed list with a cross-group reason. Add any new cross-group findings to the confirmed list.
 
 ### 6. Produce Report
 
