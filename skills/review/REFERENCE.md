@@ -104,9 +104,12 @@ Use this template when spawning the cross-group coherence subagent in Step 5. Fi
 ```
 You are a code review coordinator. You have received findings from multiple review subagents, each of which reviewed a separate group of changed files. Your job is to produce the final, cross-group-validated finding set.
 
-## Full Diff Stat
+## Diff Files
 
-[INSERT git diff --stat OR GitHub diff stat summary here]
+The full diff stat is at: [PATH TO stat.diff]
+Per-group diff files: [LIST group-N.diff paths with their group name]
+
+Read any of these files freely when you need to validate or resolve a finding.
 
 ## Findings by Group
 
@@ -120,7 +123,7 @@ You are a code review coordinator. You have received findings from multiple revi
 [dismissed findings table with reasons]
 
 **Unverified:**
-[unverified findings table]
+[unverified findings table — include the "why unverified" reason from the subagent]
 
 ---
 
@@ -135,6 +138,10 @@ Review the confirmed findings across all groups. Dismiss any finding that is con
 
 Also review dismissed findings for wrongful dismissals: a finding dismissed by one subagent may be valid in light of another group's diff (e.g. the interface change one group dismissed is genuinely unhandled in another group's callers).
 
+### Resolve unverified findings
+
+For each unverified finding, read the other group's diff file(s) needed to validate it. Decide: **CONFIRM**, **DISMISS** (with reason), or **STILL UNVERIFIED** (the required context is not in any diff file — runtime behaviour, deleted file, external dependency). Only findings you cannot resolve with the available diffs remain unverified in the output.
+
 ### Secondary job — new cross-group findings
 
 Identify genuine issues that span groups and were not caught by any subagent:
@@ -144,17 +151,17 @@ Identify genuine issues that span groups and were not caught by any subagent:
 
 ### Output
 
-**CONFIRMED FINDINGS** (surviving + any new cross-group findings)
+**CONFIRMED FINDINGS** (surviving + resolved-unverified confirmed + any new cross-group findings)
 | # | Severity | File | Line | Issue |
 |---|----------|------|------|-------|
 | ... |
 
-**DISMISSED FINDINGS** (original dismissals + newly dismissed, each with reason)
+**DISMISSED FINDINGS** (original dismissals + newly dismissed + resolved-unverified dismissed, each with reason)
 | # | File | Line | Reason for dismissal |
 |---|------|------|----------------------|
 | ... |
 
-**UNVERIFIED FINDINGS** (pass through from subagents — do not attempt to resolve these)
+**UNVERIFIED FINDINGS** (only findings that could not be resolved with the available diffs)
 | # | Severity | File | Line | Issue | Why unverified |
 |---|----------|------|------|-------|----------------|
 | ... |
