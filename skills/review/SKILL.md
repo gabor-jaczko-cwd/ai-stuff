@@ -147,7 +147,7 @@ In PR incremental mode, label each finding as **[NEW]**, **[PREVIOUSLY RAISED]**
    - Follow with the full Part 2 content
 
 5. **Post the review:**
-   - **If verdict is REQUEST_CHANGES or COMMENT and there are inline findings** (file path + line number): create a pending review, post each as an inline comment, then submit with the final comment body and verdict
+   - **If verdict is REQUEST_CHANGES or COMMENT and there are inline findings** (file path + line number): create a pending review, post each as an inline comment for **[NEW] findings only** — never post a new inline comment for `[PREVIOUSLY RAISED]` findings, as their thread already exists on the PR. Then submit with the final comment body and verdict.
    - **Otherwise:** submit directly with the final comment body and verdict
    - **Incremental mode — resolve addressed threads:** for each `[RESOLVED]` finding with a recorded `comment_id`, post a reply `"✅ Addressed."` to that thread
    - Show a completion summary: inline comments posted (if any), findings in final comment, resolved threads replied to. List any failures.
