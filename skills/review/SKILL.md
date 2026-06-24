@@ -86,7 +86,7 @@ For each logical group, spawn a **review+triage subagent** using the Agent tool 
 Each subagent will:
 1. Review the changed files in its group against the core checklist and injected project context — generating candidate findings with recommended severity
 2. Triage each candidate: read the full relevant file(s) to confirm or dismiss, and set final severity
-3. Return three lists: **confirmed findings**, **dismissed findings** (with reason), and **unverified findings** (cross-file or unreadable — cannot be confirmed or dismissed)
+3. Return three lists: **confirmed findings**, **dismissed findings** (with reason), and **unverified findings** (validation requires reading a file assigned to another group, a deleted file, or runtime behaviour)
 
 **In incremental mode:** subagents also check whether previously raised findings in their group have been addressed, labelling them `[RESOLVED]` if so.
 

@@ -149,8 +149,8 @@ In incremental mode: for each prior finding, check whether the concern has been 
 
 For each candidate finding:
 1. Read the **full file** (not just the diff) for the file containing the finding
-2. Read any related files needed to validate the finding (base classes, interfaces, callers, tests)
-3. Decide: **CONFIRM**, **DISMISS** (with reason), or **UNVERIFIED** (cannot be confirmed or dismissed — cross-file dependency outside your group, deleted file, runtime behaviour)
+2. Read any related files needed to validate the finding — you may freely read files in your group and unchanged files not assigned to any group (base classes, interfaces, shared utilities). Do **not** read files assigned to another group; that is their subagent's responsibility.
+3. Decide: **CONFIRM**, **DISMISS** (with reason), or **UNVERIFIED** (validation requires a file assigned to another group, a deleted file, or runtime behaviour you cannot observe)
 4. Set the **final severity** (may differ from recommended)
 
 Be strict: dismiss findings where reading the full context shows the code is correct. Only confirm findings where there is a clear, demonstrable issue.
