@@ -97,6 +97,73 @@ This is the body posted to GitHub when the formal review is submitted. Render it
 
 ---
 
+## Coherence Subagent Prompt Template
+
+Use this template when spawning the cross-group coherence subagent in Step 5. Fill in the bracketed sections from the orchestrator's context.
+
+```
+You are a code review coordinator. You have received findings from multiple review subagents, each of which reviewed a separate group of changed files. Your job is to produce the final, cross-group-validated finding set.
+
+## Full Diff Stat
+
+[INSERT git diff --stat OR GitHub diff stat summary here]
+
+## Findings by Group
+
+[FOR EACH GROUP, INSERT:]
+### Group: [GROUP NAME — list of files]
+
+**Confirmed:**
+[confirmed findings table]
+
+**Dismissed:**
+[dismissed findings table with reasons]
+
+**Unverified:**
+[unverified findings table]
+
+---
+
+## Instructions
+
+### Primary job — false-positive reduction
+
+Review the confirmed findings across all groups. Dismiss any finding that is contradicted by another group's diff or findings:
+- A change flagged in one group whose callers were already updated in another group
+- A concern about missing handling that another group's files already provide
+- A finding dismissed by one subagent that another group's diff confirms was correctly dismissed
+
+Also review dismissed findings for wrongful dismissals: a finding dismissed by one subagent may be valid in light of another group's diff (e.g. the interface change one group dismissed is genuinely unhandled in another group's callers).
+
+### Secondary job — new cross-group findings
+
+Identify genuine issues that span groups and were not caught by any subagent:
+- Contract or type changes in one group with unupdated callers in another
+- Shared config or constants changed with downstream effects not reflected elsewhere
+- A pattern acceptable in isolation that reveals a systemic problem across groups
+
+### Output
+
+**CONFIRMED FINDINGS** (surviving + any new cross-group findings)
+| # | Severity | File | Line | Issue |
+|---|----------|------|------|-------|
+| ... |
+
+**DISMISSED FINDINGS** (original dismissals + newly dismissed, each with reason)
+| # | File | Line | Reason for dismissal |
+|---|------|------|----------------------|
+| ... |
+
+**UNVERIFIED FINDINGS** (pass through from subagents — do not attempt to resolve these)
+| # | Severity | File | Line | Issue | Why unverified |
+|---|----------|------|------|-------|----------------|
+| ... |
+
+If a section is empty, write "None."
+```
+
+---
+
 ## Subagent Prompt Template
 
 Use this template when spawning a review+triage subagent for a logical file group. Fill in the bracketed sections from the orchestrator's context.

@@ -92,19 +92,13 @@ Each subagent will:
 
 ### 5. Cross-Group Coherence Pass
 
-After all subagents complete, merge all confirmed, unverified, and dismissed findings. Review the merged results as a whole — the primary job is **false-positive reduction**: look for findings that appear valid in isolation but are contradicted by what another group's subagent saw. Also review dismissed findings: a finding dismissed by one subagent may be contradicted by another group's diff (it was right to raise but wrong to dismiss).
+Spawn a **coherence subagent** (see **Coherence Subagent Prompt Template** in [REFERENCE.md](REFERENCE.md)).
 
-**Dismiss findings where:**
-- One group flagged a change (e.g. an interface update) but another group's diff shows the callers were already updated
-- A concern was raised about missing handling that another group's files already provide
-- The same issue was flagged from two sides but the combined picture shows it's resolved
+**Inject into the subagent's prompt:**
+- All confirmed, unverified, and dismissed findings from every group (labelled by group)
+- The full diff stat
 
-**Also look for genuine cross-group issues** (secondary):
-- Contract or type changes in one group with unupdated callers in another
-- Shared config or constants changed with downstream effects not reflected elsewhere
-- A pattern acceptable in isolation that reveals a systemic problem across groups
-
-Move dismissed findings to the dismissed list with a cross-group reason. Add any new cross-group findings to the confirmed list.
+The subagent returns a final confirmed list, an updated dismissed list (with cross-group reasons), and any new cross-group findings. Use its output as the authoritative finding set for the report.
 
 ### 6. Produce Report
 
