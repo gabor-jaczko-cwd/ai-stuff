@@ -33,6 +33,7 @@ On startup, detect which mode to use:
 **PR mode:**
 - Find the open PR for this branch on GitHub
 - Retrieve all unresolved review comments
+- For each comment, also fetch the full reply thread — collapse to the last 3 messages if the thread is long, but always include the original comment and the most recent reply
 
 **Local mode:**
 - Read `./tmp/review-branch-<name>.md`
@@ -49,19 +50,21 @@ For each open item:
 - **Categorise**: bug fix / style / design / question / nit
 - **Prioritise**: blocker > major > minor > nit
 - **Validate**: determine if the concern is legitimate given the codebase context
+- **Pre-triage git check (PR mode):** check whether the file/line referenced by the comment has been modified in commits made *after* the review was posted (`git log --oneline <review-commit>..HEAD -- <file>`). If so, flag the comment as "⚠️ likely already addressed (commit <sha>)" in the plan — do **not** auto-resolve; confirm with the user during Step 3 before treating it as open work.
 
-If an item is ambiguous, use the `grill-me` skill to clarify intent before proceeding.
+If an item is ambiguous, note the question inline in the plan (Step 3) — one targeted question per item. Do not use the `grill-me` skill.
 
 ### 3. Build a Plan
 
-Produce a prioritised action list:
+Produce a prioritised action list. For any ambiguous items, include the clarifying question inline under that item and wait for the user to answer before finalising the plan. For any items flagged as "likely already addressed," ask the user to confirm whether they are resolved.
 
-**PR mode** — reference GitHub comment IDs and reviewers:
+**PR mode** — reference GitHub comment IDs, reviewers, and thread context:
 ```
 ## Review Response Plan
 
 ### Blockers
 - [ ] Comment #<id> (@<reviewer>): <summary> → <proposed fix>
+  > Thread: <last message in thread, if any>
 
 ### Major
 - [ ] Comment #<id> (@<reviewer>): <summary> → <proposed fix>
@@ -69,8 +72,14 @@ Produce a prioritised action list:
 ### Minor / Nits
 - [ ] Comment #<id> (@<reviewer>): <summary> → <proposed fix>
 
+### Likely Already Addressed (confirm)
+- ⚠️ Comment #<id> (@<reviewer>): <summary> — modified in <sha>. Already resolved? [yes/no]
+
 ### Rejected (with reason)
 - Comment #<id>: <reason for not acting>
+
+### Clarifications Needed
+- Comment #<id>: <one targeted question>
 ```
 
 **Local mode** — reference finding row numbers and file/line:
@@ -88,32 +97,38 @@ Produce a prioritised action list:
 
 ### Rejected (with reason)
 - Finding #<n>: <reason for not acting>
+
+### Clarifications Needed
+- Finding #<n>: <one targeted question>
 ```
 
-**PR mode:** include a reply message for each item — whether actioning it or declining it.
+**PR mode:** include a draft reply message for each item — whether actioning it or declining it.
 
-Present the plan to the user and wait for approval before implementing.
+Present the plan to the user and wait for approval (and answers to any clarifications) before implementing.
 
 ### 4. Implement
 
 Work through the plan top-down (blockers first):
 
 - Make code changes
-- Stage and commit after each logical group: `git add -p && git commit -m "review: <summary>"`
+- Stage only the files modified for each finding: `git add <file1> <file2> && git commit -m "review: <summary>"`
 - Do **not** push or post anything yet
 
 ### 5. Test & Validate
 
-Pause and prompt the user to verify the changes:
+Before prompting the user:
 
-- Suggest a test command if one is detectable from the repo (e.g. `make test`, `php artisan test`, `npm test`)
-- Otherwise prompt: _"Please run your tests and check the diff. Reply 'approved' when happy, or describe any issues."_
-- If the user reports a problem, return to Step 4 to fix and re-commit
-- Only continue once the user has explicitly approved
+1. Check the project guidelines (CLAUDE.md, Makefile, package.json, composer.json, etc.) for a test command
+2. If a test command is found, identify tests relevant to the changed files and run them — show the full output
+3. If tests pass, prompt: _"Tests passed. Check the diff and reply 'approved' when happy, or describe any issues."_
+4. If tests fail, return to Step 4 to fix, re-commit, and re-run before asking the user
+5. If no test command is detectable, prompt: _"No test command detected. Please run your tests and check the diff. Reply 'approved' when happy, or describe any issues."_
+
+Only continue once the user has explicitly approved.
 
 ### 6. Record Outcomes
 
-**PR mode** — edit replies:
+#### PR mode — edit replies
 
 Write a temporary reply file at `/tmp/review-replies.md` — one entry per actioned or declined comment:
 
@@ -135,7 +150,11 @@ reply: |
 
 Prompt: _"Reply file written to `/tmp/review-replies.md`. Edit the reply text and set `skip: true` for any comment you want to skip. Reply 'approved' when ready."_ Wait for approval.
 
-**Local mode** — update save file:
+Before proceeding to Step 7, **validate the reply file structure**:
+- Every entry must have a `## <n>. Comment #<id>` header, a `skip:` field (true/false), and a `reply:` block
+- If any entry is malformed, report exactly which entry and what is wrong, and prompt: _"Fix the malformed entries and reply 'approved' again."_ Do not publish until the file is valid.
+
+#### Local mode — update save file
 
 1. For each **actioned** finding: prepend `[RESOLVED]` to its severity cell — e.g. `🟡 Warning` → `[RESOLVED] 🟡 Warning`
 2. For each **rejected** finding: prepend `[REJECTED]` to its severity cell — e.g. `🔵 Nit` → `[REJECTED] 🔵 Nit`
@@ -151,7 +170,7 @@ Prompt: _"Reply file written to `/tmp/review-replies.md`. Edit the reply text an
 
 ### 7. Publish
 
-**PR mode:**
+#### PR mode
 
 1. `git push` to publish the commits
 2. Read back `/tmp/review-replies.md` and for each entry:
@@ -159,15 +178,30 @@ Prompt: _"Reply file written to `/tmp/review-replies.md`. Edit the reply text an
    - otherwise → post the reply on GitHub against the original comment and mark it resolved
 3. Delete `/tmp/review-replies.md`
 
-**Local mode:** no push, no GitHub interaction — the user decides when to push.
+#### Local mode
+
+No push, no GitHub interaction — the user decides when to push.
 
 ### 8. Summary
 
-**PR mode:**
+#### PR mode
+
 - ✅ Actioned & replied: `<n>` comments
 - ⏭️ Skipped (left unresolved): `<n>` comments
+- ❌ Rejected: `<n>` comments
 
-**Local mode:**
+If any comments were rejected, list them:
+
+```
+### Rejected Comments
+
+| Comment | Reviewer | Reason |
+|---------|----------|--------|
+| #<id>   | @<name>  | <reason> |
+```
+
+#### Local mode
+
 - ✅ Resolved: `<n>` findings
 - ❌ Rejected: `<n>` findings (with reasons listed)
 - 📄 Save file updated: `./tmp/review-branch-<name>.md`
@@ -177,10 +211,11 @@ Prompt: _"Reply file written to `/tmp/review-replies.md`. Edit the reply text an
 ## Rules
 
 - Never push commits until the user has passed the Test & Validate gate (Step 5)
-- **PR mode:** never post replies until the user has approved the reply file (Step 6)
+- **PR mode:** never post replies until the user has approved the reply file (Step 6) and it has passed validation
 - Never mark an item resolved without either implementing a fix or a documented rejection reason
-- Keep commits small and scoped to the item being addressed
+- Keep commits small and scoped to the item being addressed; stage only the files changed for each finding
 - Do not rewrite unrelated code while addressing review findings
 - If a fix introduces risk, flag it to the user before implementing
 - `/tmp/review-replies.md` must never be staged or committed
 - **Local mode:** do not push — the user decides when to push
+- Never auto-resolve a comment flagged as "likely already addressed" — always confirm with the user first
