@@ -7,6 +7,7 @@
 ```markdown
 ## PR Review: #<number> — <title>
 > **Author:** @<author> | **Base:** `<base>` | **CI:** <✅ passing / ❌ failing / ⚠️ unknown>
+> **Verification:** <🔒 read-only worktree / ⚡ live working directory (tests executed)>
 > *(Incremental review — commits since <date> only)* <!-- omit if full review -->
 
 ### 📋 Summary
@@ -24,7 +25,7 @@
 
 <!-- Omit if no unverified findings -->
 ### ⚠️ Unverified Findings
-*These findings could not be fully validated (cross-file dependencies, deleted files, or runtime behaviour). Review manually.*
+*These findings could not be fully validated — runtime behaviour that no existing test or tool could confirm (or `use-cwd` execution was not enabled for this run). Review manually.*
 
 | # | Severity | File | Line | Issue |
 |---|----------|------|------|-------|
@@ -73,6 +74,7 @@ This is the body posted to GitHub when the formal review is submitted. Render it
 ```markdown
 ## Branch Review: `<branch>` → `<base>`
 > **Author(s):** <authors> | **Commits:** <count>
+> **Verification:** <🔒 read-only worktree / ⚡ live working directory (tests executed)>
 
 ### 📋 Summary
 <What the branch does in 2–3 sentences.>
@@ -89,7 +91,7 @@ This is the body posted to GitHub when the formal review is submitted. Render it
 
 <!-- Omit if no unverified findings -->
 ### ⚠️ Unverified Findings
-*These findings could not be fully validated (cross-file dependencies, deleted files, or runtime behaviour). Review manually.*
+*These findings could not be fully validated — runtime behaviour that no existing test or tool could confirm (or `use-cwd` execution was not enabled for this run). Review manually.*
 
 | # | Severity | File | Line | Issue |
 |---|----------|------|------|-------|
@@ -118,6 +120,16 @@ The full diff stat is at: [PATH TO stat.diff]
 Per-group diff files: [LIST group-N.diff paths with their group name]
 
 Read any of these files freely when you need to validate or resolve a finding.
+
+## Repository Access
+
+Full source-branch file content is available at: [ABSOLUTE PATH TO WORKTREE ROOT, OR "the current working directory" if use-cwd is active]
+Base-branch content (e.g. for deleted/renamed files) is available via `git show [BASE REF]:<path>`.
+
+[IF use-cwd IS ACTIVE, INSERT:]
+## Execution Enabled
+
+You may run the project's existing test suite or static-analysis tooling (e.g. `./coral test <path>`, `./coral pint --dirty`) against the checked-out working directory to CONFIRM or DISMISS findings currently marked UNVERIFIED for runtime-behaviour reasons. Only run existing tests/tools — never write new tests, never run arbitrary or destructive commands. If no existing test/tool can settle a finding, leave it UNVERIFIED.
 
 ## Findings by Group
 
@@ -148,7 +160,7 @@ Also review dismissed findings for wrongful dismissals: a finding dismissed by o
 
 ### Resolve unverified findings
 
-For each unverified finding, read the other group's diff file(s) needed to validate it. Decide: **CONFIRM**, **DISMISS** (with reason), or **STILL UNVERIFIED** (the required context is not in any diff file — runtime behaviour, deleted file, external dependency). Only findings you cannot resolve with the available diffs remain unverified in the output.
+Incoming unverified findings should only be runtime-behaviour cases (group subagents have full repository access, so cross-file and deleted-file cases should already be resolved). For each: if execution is enabled (see **Execution Enabled** above), attempt to confirm or dismiss it by running an existing test/tool. Otherwise, decide **CONFIRM** or **DISMISS** only if the other groups' diffs/findings make it resolvable without execution. Only findings that remain genuinely unresolvable — no existing test covers it, or execution isn't enabled this run — stay **STILL UNVERIFIED** in the output.
 
 ### Secondary job — new cross-group findings
 
@@ -210,6 +222,13 @@ The full diff stat is at: [PATH TO stat.diff]
 
 Read both files before starting your review. The diff stat shows what changed outside your group so you have context on the broader scope of the PR.
 
+## Repository Access
+
+Full source-branch file content is available at: [ABSOLUTE PATH TO WORKTREE ROOT, OR "the current working directory" if use-cwd is active]
+Base-branch content (e.g. to inspect a deleted or renamed file) is available via `git show [BASE REF]:<path>`.
+
+This access is **read-only** — do not run tests, linters, or any other command that executes code, even if the working directory happens to be live (`use-cwd`). Execution only ever happens in the coherence subagent, since group subagents run concurrently and could contend with each other over a shared live environment.
+
 [IN INCREMENTAL MODE: INSERT]
 ## Prior Findings for Your Group
 The following findings were raised in the previous review for files in your group.
@@ -239,9 +258,9 @@ In incremental mode: for each prior finding, check whether the concern has been 
 ### Pass 2 — Triage
 
 For each candidate finding:
-1. Read the **full file** (not just the diff) for the file containing the finding
-2. Read any related files needed to validate the finding — you may freely read files in your group and unchanged files not assigned to any group (base classes, interfaces, shared utilities). Do **not** read files assigned to another group; that is their subagent's responsibility.
-3. Decide: **CONFIRM**, **DISMISS** (with reason), or **UNVERIFIED** (validation requires a file assigned to another group, a deleted file, or runtime behaviour you cannot observe)
+1. Read the **full file** (not just the diff) for the file containing the finding, from the worktree/working directory (see **Repository Access** above)
+2. Read any related files needed to validate the finding — you may freely read **any** file in the repository, including files owned by another group, unchanged files, and (via `git show [BASE REF]:<path>`) deleted or renamed files. If reading a file outside your group surfaces its own genuine finding, report it too — the coherence pass dedupes across groups, so don't hold back.
+3. Decide: **CONFIRM**, **DISMISS** (with reason), or **UNVERIFIED** (only for runtime behaviour you cannot observe without executing code — which you must not do; if you can suggest a specific existing test/tool that would settle it, note that alongside the finding for the coherence pass)
 4. Set the **final severity** (may differ from recommended)
 
 Be strict: dismiss findings where reading the full context shows the code is correct. Only confirm findings where there is a clear, demonstrable issue.
@@ -366,4 +385,35 @@ git --no-pager diff <base>...<branch>
 
 # Stat summary
 git --no-pager diff --stat <base>...<branch>
+```
+
+---
+
+## Review Environment Commands (Step 3)
+
+```bash
+# Resolve a ref to a commit SHA
+git rev-parse <branch>
+
+# PR mode: fetch the PR head explicitly as a local ref
+git fetch origin pull/<number>/head:<local-ref>
+
+# Remove a stale worktree from an interrupted prior review
+git worktree remove --force ./tmp/review-worktrees/<pr-number|branch-name>
+
+# Create the disposable, read-only worktree (detached — never conflicts with a branch checked out elsewhere)
+git worktree add --detach ./tmp/review-worktrees/<pr-number|branch-name> <sha>
+
+# Read a file's content from the base branch without a second worktree (e.g. a file deleted on the source branch)
+git show <base-ref>:<path/to/file>
+
+# Tear down after the report is produced
+git worktree remove ./tmp/review-worktrees/<pr-number|branch-name>
+
+# use-cwd mode: verify clean before touching the working directory
+git status --porcelain   # any output at all → abort the review
+
+# use-cwd mode: check out the reviewed branch directly (only after the clean check passes)
+git checkout <branch>                              # branch mode
+git fetch origin pull/<number>/head:<local-ref> && git checkout <local-ref>   # PR mode
 ```

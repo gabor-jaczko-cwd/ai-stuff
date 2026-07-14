@@ -20,6 +20,8 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 - `review branch feature/my-work against main` — explicit base
 - `review branch focus: security`
 
+**`use-cwd` opt-in (either mode):** the skill also detects, from free-text intent (no fixed keyword — phrases like "you can use the current working environment", "use the CWD", "you're allowed to use the local environment" all count), whether the user has granted permission to operate directly in the current working directory instead of a disposable worktree. See Step 3.
+
 ## Workflow
 
 ### 1. Determine Scope
@@ -53,7 +55,30 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 - Run `git fetch` to ensure remote refs are up to date
 - Extract metadata: author(s), commit count (see [REFERENCE.md](REFERENCE.md) for git commands)
 
-### 3. Assess Scope
+### 3. Set Up Review Environment
+
+Determine whether subagents will operate against a disposable **read-only worktree** (default) or the **current working directory** (`use-cwd`, opt-in — detected per Quick Start above). This is a per-invocation signal only; never carry it over from a prior review.
+
+**If `use-cwd` was requested:**
+1. Run `git status`. If the working directory has *any* uncommitted changes (tracked or untracked), **abort the review immediately** with a clear error telling the user to commit or stash and re-run. Do not fall back to the worktree path silently, and do not do any other setup work first.
+2. If clean:
+   - **Branch mode:** fetch and `git checkout <branch>` directly in the working directory
+   - **PR mode:** `git fetch origin pull/<number>/head:<local-ref>` then `git checkout <local-ref>` (same-repo branches only — this skill does not special-case fork PRs)
+3. Do **not** restore the previously-checked-out branch after the review finishes — leave the working directory on the reviewed branch, since the user explicitly opted into using it live.
+4. Subagents read directly from the working directory (no worktree exists in this mode). This is also the only mode where the coherence subagent may execute tests/tooling (Step 5).
+
+**Otherwise (default):**
+1. Resolve the source ref to a commit SHA (`git rev-parse <branch>`, or the PR head SHA)
+2. In PR mode, fetch the PR head explicitly if not already done: `git fetch origin pull/<number>/head:<local-ref>`
+3. If a worktree already exists at the target path from a stale/interrupted prior review, remove it first (`git worktree remove --force`)
+4. Create a **detached** worktree at that SHA: `git worktree add --detach ./tmp/review-worktrees/<pr-number|branch-name> <sha>` — detached so it never conflicts with a branch checked out elsewhere (including the main worktree)
+5. **If `git worktree add` fails for any reason, abort the review** with the underlying git error. Do not fall back to reading from the ambient working directory — that reintroduces the exact unreliable-checkout problem this step exists to fix.
+6. This worktree is shared **read-only** by every subagent spawned in Steps 4–5. Base-branch file content (e.g. to inspect a deleted or renamed file) is read via `git show <base-ref>:<path>` — no second worktree is created.
+7. Tear down the worktree (`git worktree remove`) once Step 6's report has been produced, including on early-exit paths (e.g. the user cancels after the large-diff prompt in Step 4).
+
+Record which mode was used (worktree vs. live CWD) — it is surfaced in the report header in Step 6.
+
+### 4. Assess Scope
 
 **a) Classify commits** — determines what to review (skip decision):
 - Fetch/list the commits:
@@ -78,7 +103,7 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 - `group-1.diff`, `group-2.diff`, … — one file per logical group, containing only the diffs for that group's files
 - Pass each subagent its group's file path; the orchestrator does not hold diff content in context after this point
 
-### 4. Spawn Review+Triage Subagents
+### 5. Spawn Review+Triage Subagents
 
 For each logical group, spawn a **review+triage subagent** using the Agent tool (see **Subagent Prompt Template** in [REFERENCE.md](REFERENCE.md)).
 
@@ -87,6 +112,8 @@ For each logical group, spawn a **review+triage subagent** using the Agent tool 
 - A **list of available context docs** (paths only — the subagent reads whichever are relevant)
 - The **group's file list**
 - The path to the group's diff file (`./tmp/review-.../group-N.diff`) and the stat file (`./tmp/review-.../stat.diff`)
+- The **absolute path to the worktree root** (or a note that the working directory is being used directly, in `use-cwd` mode) — this is where full-file content lives for triage
+- The resolved **base ref** (for `git show <base-ref>:<path>` lookups, e.g. deleted/renamed files)
 - The optional `focus:` hint if provided
 - **In incremental mode:** prior findings for files in this group, with their `comment_id`s
 
@@ -94,31 +121,35 @@ For each logical group, spawn a **review+triage subagent** using the Agent tool 
 
 Each subagent will:
 1. Review the changed files in its group against the core checklist and injected project context — generating candidate findings with recommended severity
-2. Triage each candidate: read the full relevant file(s) to confirm or dismiss, and set final severity
-3. Return three lists: **confirmed findings**, **dismissed findings** (with reason), and **unverified findings** (validation requires reading a file assigned to another group, a deleted file, or runtime behaviour)
+2. Triage each candidate: read the full relevant file(s) — from the worktree/working directory, including files owned by another group — to confirm or dismiss, and set final severity. Subagents may report a finding on any file they read, not only their own group's; the coherence pass (Step 6) dedupes across groups.
+3. Return three lists: **confirmed findings**, **dismissed findings** (with reason), and **unverified findings** — the only remaining unverified reason is runtime behaviour that cannot be confirmed without executing code, which group subagents never do (see Step 6). When flagging a finding this way, suggest a candidate test/command that could resolve it.
 
 **In incremental mode:** subagents also check whether previously raised findings in their group have been addressed, labelling them `[RESOLVED]` if so.
 
-### 5. Cross-Group Coherence Pass
+### 6. Cross-Group Coherence Pass
 
-**If there is only one group, skip this step** — use the subagent's output directly as the authoritative finding set and proceed to Step 6.
+**If there is only one group and `use-cwd` is not active (or no group returned a runtime-behaviour unverified finding), skip this step** — use the subagent's output directly as the authoritative finding set and proceed to Step 7.
 
-Spawn a **coherence subagent** (see **Coherence Subagent Prompt Template** in [REFERENCE.md](REFERENCE.md)).
+**Otherwise, spawn a coherence subagent** (see **Coherence Subagent Prompt Template** in [REFERENCE.md](REFERENCE.md)) — even with only one group, if `use-cwd` is active and that group returned runtime-behaviour unverified findings, spawn it scoped solely to attempting execution on those.
 
 **Inject into the subagent's prompt:**
 - All confirmed (`[NEW]` only), unverified, and dismissed findings from every group (labelled by group)
 - The full diff stat
+- The worktree/working-directory path and base ref (same as Step 5)
+- Whether `use-cwd` is active
+
+**Only if `use-cwd` is active:** the coherence subagent may run the project's existing tests or static-analysis tooling to resolve runtime-behaviour unverified findings (e.g. `./coral test <path>`, `./coral pint --dirty`) — never arbitrary or destructive commands, and never against a finding outside the diff's scope. This is the **only** point in the whole workflow where code is executed; group subagents in Step 5 never execute anything, since they run concurrently against a shared live environment and could contend with each other (test DB, ports, etc.).
 
 The subagent returns a final confirmed list, an updated dismissed list (with cross-group reasons), and any new cross-group findings. Reattach the held `[PREVIOUSLY RAISED]` findings to the confirmed list after receiving the coherence subagent's output. Use the combined result as the authoritative finding set for the report.
 
-### 6. Produce Report
+### 7. Produce Report
 
 **PR mode** — render both parts from [REFERENCE.md](REFERENCE.md):
-1. **Part 1 — Findings**: PR header, summary, findings table, unverified findings section (if any)
+1. **Part 1 — Findings**: PR header (including the **Verification** line — read-only worktree vs. live working directory with tests executed), summary, findings table, unverified findings section (if any)
 2. **Part 2 — Final Review Comment**: verdict + rationale, "What's good", "Suggestions"
 
 **Branch mode** — render the single report from [REFERENCE.md](REFERENCE.md):
-1. Header, summary, findings table, unverified findings section (if any)
+1. Header (including the **Verification** line), summary, findings table, unverified findings section (if any)
 2. Verdict + rationale
 3. Suggestions / Further Considerations
 
@@ -137,12 +168,14 @@ In PR incremental mode, label each finding as **[NEW]**, **[PREVIOUSLY RAISED]**
 
 **Write the save file** with `status: completed` (see _Save/Continue_ below).
 
-### 7. Post-Review Actions
+**Tear down the review environment now** (worktree removal, per Step 3) — nothing after this point needs file access.
+
+### 8. Post-Review Actions
 
 **PR mode only** — after rendering the report, enter a loop:
 
 1. Ask: _"Post to GitHub, or make changes first?"_
-   - **Make changes:** the user may edit the save file directly, or ask for changes in chat (apply them to both the chat display and the save file). Then repeat from step 1.
+   - **Make changes:** the user may edit the save file directly, or ask for changes in chat (apply them to both the chat display and the save file). Then repeat from the top of this step.
    - **Post to GitHub:** proceed below.
 
 2. Re-read the save file to pick up any edits the user made between review and posting — findings pruned, language softened, verdict changed.
@@ -207,7 +240,7 @@ excluded_commits:
 
 ### Finalization
 
-When writing the save file at the end of step 5:
+When writing the save file at the end of step 7:
 
 1. Set `status: completed` and `started` to the current review's timestamp
 2. Check whether the file contains a previously completed review
@@ -222,8 +255,14 @@ The result is always: **frontmatter → latest completed review → `---` → `<
 
 - Secrets findings always sorted to top of the findings table, always 🔴 Critical
 - Do not review commits the user has excluded as boilerplate/generated
+- **Review environment (both modes):**
+  - Default to a disposable, detached, **read-only** worktree — never read from the ambient working directory unless `use-cwd` was explicitly granted
+  - `use-cwd` aborts the entire review immediately if the working directory is not clean — never auto-stash, never auto-commit, never silently fall back to the worktree path
+  - If `git worktree add` fails, abort with the error — never silently fall back to reading from the ambient working directory
+  - Code execution (tests, static analysis) only ever happens in the coherence/execution-pass subagent, and only when `use-cwd` is active — group subagents in Step 5 never execute anything
+  - The worktree never persists between reviews — tear it down once the report is produced
 - **PR mode only:**
-  - Never post to GitHub without the user explicitly choosing "Post to GitHub" in step 6
+  - Never post to GitHub without the user explicitly choosing "Post to GitHub" in step 8
   - If CI checks are failing, verdict is forced to `REQUEST CHANGES` (GitHub Actions only — see [REFERENCE.md](REFERENCE.md))
   - In incremental mode, do not re-raise findings already marked resolved
   - In incremental mode, actively check whether previously raised findings have been fixed; label them `[RESOLVED]` and reply to their inline comment threads after posting
