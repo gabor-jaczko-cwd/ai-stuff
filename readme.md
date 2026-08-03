@@ -8,6 +8,7 @@ A collection of AI agent skills and tools for use with GitHub Copilot, Claude, a
 |---|---|---|
 | [ask-matt](skills/ask-matt/SKILL.md) | Routes you to whichever skill or flow fits your current situation. | [mattpocock/skills](https://github.com/mattpocock/skills) |
 | [batch-grill-me](skills/batch-grill-me/SKILL.md) | Interviews you on every open question at once, round by round, instead of one at a time. | [mattpocock/skills](https://github.com/mattpocock/skills) |
+| [build](skills/build/SKILL.md) | Drives a large, multi-phase feature to completion via a foreman/crewman/inspector agent loop with eval-gated sign-off. Reserved for work too big to hand-hold; everyday ticket work stays on this pack's own wayfinder/to-spec/to-tickets/implement/code-review pipeline. | &mdash; |
 | [claude-handoff](skills/claude-handoff/SKILL.md) | Hands the current conversation off to a fresh background agent that picks up immediately. | [mattpocock/skills](https://github.com/mattpocock/skills) |
 | [code-review](skills/code-review/SKILL.md) | Reviews a diff along two axes — Standards and Spec — via parallel sub-agents, reported side by side. | [mattpocock/skills](https://github.com/mattpocock/skills) |
 | [codebase-design](skills/codebase-design/SKILL.md) | Shared vocabulary for designing deep modules and finding deepening opportunities. | [mattpocock/skills](https://github.com/mattpocock/skills) |
@@ -38,3 +39,11 @@ A collection of AI agent skills and tools for use with GitHub Copilot, Claude, a
 | [wayfinder](skills/wayfinder/SKILL.md) | Charts a huge chunk of work as a shared map of decision tickets, resolved one at a time. | [mattpocock/skills](https://github.com/mattpocock/skills) |
 | [wizard](skills/wizard/SKILL.md) | Generates an interactive bash wizard that walks a human through a manual setup or migration procedure. | [mattpocock/skills](https://github.com/mattpocock/skills) |
 | [writing-great-skills](skills/writing-great-skills/SKILL.md) | Reference for writing and editing skills well. | [mattpocock/skills](https://github.com/mattpocock/skills) |
+
+## Agents
+
+Custom Claude Code subagents are bundled with the skill that uses them rather than living in a shared top-level folder — currently just [`skills/build/agents/`](skills/build/agents/README.md) (`foreman`, `crewman`, `inspector`). Symlink them into `~/.claude/agents/`; see that folder's README for the exact commands.
+
+## Hooks
+
+Hook scripts live under [`hooks/`](hooks/build/README.md) — currently the three enforcement hooks `build` needs (commit gate, review-commit reminder, pre-compact reminder). Symlink the `build` folder into `~/.claude/hooks/build` and merge its `settings.json` fragment; see that folder's README.
