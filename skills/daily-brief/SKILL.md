@@ -63,6 +63,18 @@ For each event, render one line:
 - If there are no events for today: the calendar section is just `No meetings
   today.`
 
+**If the calendar tool call fails for any reason** — including a permission
+prompt that never resolves — retry up to 3 times, then stop trying and move
+on. Never pause the run to wait for a human to approve a permission prompt;
+when this runs headlessly (via the scheduled job) there is no one there to
+approve it, and stalling means the whole brief never gets sent. Treat it as
+a Failures-section case (see below): render the calendar section as
+`⚠️ Could not fetch calendar (<short reason>) — showing PR data only.` and
+continue straight on to the Pull requests section. This must be the actual
+behavior every run, not a judgment call — a prior run stalled asking for
+approval instead of degrading gracefully, and that's the bug this rule
+fixes.
+
 ## 2. Pull requests
 
 Read `repos` and `github_login` from `config.yaml`.
@@ -207,11 +219,15 @@ Do not include repo names in the PR lines — the link is enough.
 
 ## 3. Failures
 
-If a repo's PR list or a specific PR's detail calls fail, keep going with
-everything else that succeeded, and add one line per failure:
-`⚠️ Could not fetch PRs from <repo> (<short error>) — showing partial results.`
+If the calendar fetch, a repo's PR list, or a specific PR's detail calls
+fail, keep going with everything else that succeeded, and add one line per
+failure — `⚠️ Could not fetch calendar (<short error>) — showing PR data
+only.` or `⚠️ Could not fetch PRs from <repo> (<short error>) — showing
+partial results.`
 
-Never abort the whole brief because one call failed.
+Never abort the whole brief, and never stop to wait on a permission prompt,
+because one call failed — this runs headlessly with no one to approve
+anything, so any stall here means the brief silently never gets sent.
 
 ## 4. Compose and send
 
