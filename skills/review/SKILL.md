@@ -173,7 +173,7 @@ In PR incremental mode, label each finding as **[NEW]**, **[PREVIOUSLY RAISED]**
 - **[PREVIOUSLY RAISED]** findings are moved to a separate **"⏳ Still open from last review"** section and do **not** affect the verdict — the previous review already set that expectation.
 - **[RESOLVED]** findings go in a separate **"✅ Resolved since last review"** section and do not affect the verdict.
 
-**Write the save file** with `status: completed` (see _Save/Continue_ below).
+**Write the save file** — follow _Finalization_ under _Save/Continue_ below exactly; it requires reading any existing file's content before writing.
 
 **Tear down the review environment now** (worktree removal, per Step 3) — nothing after this point needs file access.
 
@@ -239,20 +239,20 @@ excluded_commits:
 ...previous completed review content...
 ```
 
-### Behaviour
-
-- The save file is **only written on completion** (no in-progress saves)
-- If a completed save file already exists when a new review starts: proceed with the new review; the previous completed review will be archived on finalization
-- No resume from partial runs — if a session is interrupted, start a fresh review
-
 ### Finalization
 
-When writing the save file at the end of step 7:
+The save file is **only ever written once per review, at the end of step 7** — there are no in-progress saves and no resuming a partial run; an interrupted session just starts fresh.
 
-1. Set `status: completed` and `started` to the current review's timestamp
-2. Check whether the file contains a previously completed review
-3. If yes: prepend the new completed report above a `---` separator, add `<!-- reviewed: <previous started timestamp> -->` before the old content
-4. If no: write the completed report as the file body
+Writing it is always a single **read-then-write**, never an in-place edit of the file that's already there:
+
+1. **Attempt to read the save file path now, regardless of what the workflow's Step 1 already determined.** Knowing the file *exists* (from Step 1's incremental-detection check) is not the same as having its *content* — you need the actual bytes in hand before step 3 below.
+2. If that read succeeds, take its full contents as `OLD_CONTENT` verbatim (frontmatter, body, all of it, unmodified). If it fails (no file), `OLD_CONTENT` is empty.
+3. Compose the full new file contents as one string, in this exact order, then write it with a single `Write` call:
+   - New frontmatter, with this review's `status: completed` and `started` set to this review's timestamp
+   - This review's completed report
+   - Only if `OLD_CONTENT` is non-empty: a `---` separator line, then `<!-- reviewed: <OLD_CONTENT's `started` timestamp> -->`, then `OLD_CONTENT` unchanged
+
+Never write the new report alone when `OLD_CONTENT` exists — that deletes review history. Never build this with a partial/`Edit`-style patch against the old file — read fully, concatenate in memory, write once.
 
 The result is always: **frontmatter → latest completed review → `---` → `<!-- reviewed: ... -->` → older reviews (newest-first)**
 
