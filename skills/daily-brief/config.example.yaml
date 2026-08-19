@@ -1,0 +1,16 @@
+# Copy this file to config.yaml (gitignored) and fill in your own values.
+
+# Your GitHub username.
+github_login: your-github-login
+
+# owner/repo strings to track open PRs across.
+repos:
+  - your-org/your-repo-1
+  - your-org/your-repo-2
+
+# Your Slack member ID (Slack profile -> "Copy member ID").
+slack_user_id: U00000000
+
+# Filesystem path to a Slack bot token file (chmod 600). See the Setup
+# section in SKILL.md for how to create one.
+slack_bot_token_path: ~/.config/claude-notifier/slack-bot-token
