@@ -13,6 +13,14 @@
 ### 📋 Summary
 <What the PR does in 2–3 sentences. In incremental mode, note what changed since last review.>
 
+<!-- Omit entirely if no ticket-shaped token was found, no matching tracker tool was reachable, or the fetch failed -->
+### 🎯 Acceptance Criteria
+*Checked against <TICKET-KEY>: <ticket summary>.* <!-- if the ticket has children, list them: "Children: <KEY> (<summary>), ..." -->
+
+| Ticket | Coverage | Notes |
+|--------|----------|-------|
+| <KEY> | ✅ Covered / ⚠️ Partially covered / ❌ Not covered | <brief reason, referencing specific diff evidence> |
+
 ### 🔍 Findings
 
 | # | Severity | File | Line | Issue |
@@ -78,6 +86,14 @@ This is the body posted to GitHub when the formal review is submitted. Render it
 
 ### 📋 Summary
 <What the branch does in 2–3 sentences.>
+
+<!-- Omit entirely if no ticket-shaped token was found, no matching tracker tool was reachable, or the fetch failed -->
+### 🎯 Acceptance Criteria
+*Checked against <TICKET-KEY>: <ticket summary>.* <!-- if the ticket has children, list them: "Children: <KEY> (<summary>), ..." -->
+
+| Ticket | Coverage | Notes |
+|--------|----------|-------|
+| <KEY> | ✅ Covered / ⚠️ Partially covered / ❌ Not covered | <brief reason, referencing specific diff evidence> |
 
 ### 🔍 Findings
 
@@ -339,6 +355,8 @@ If a section is empty, write "None."
 | 🔴 | Critical | Must fix before merge (bugs, security, secrets, broken tests) | Forces `REQUEST CHANGES` / `NEEDS WORK` |
 | 🟡 | Warning | Should fix — requires a demonstrable negative consequence (a bug that can occur, a security gap, a measurable perf hit) | Nudges toward `REQUEST CHANGES` / `NEEDS WORK` |
 | 🔵 | Nit | Optional improvement (style, naming preference, structure with no functional impact) | No effect |
+
+A checked ticket's acceptance criteria being **not fully met** (❌ Not covered, or a genuine gap within ⚠️ Partially covered) has the same verdict effect as a 🔴 Critical finding, even though it's rendered in its own Acceptance Criteria section rather than the findings table — see Step 7's verdict table.
 
 ---
 

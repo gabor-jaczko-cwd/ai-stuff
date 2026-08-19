@@ -55,6 +55,13 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 - Run `git fetch` to ensure remote refs are up to date
 - Extract metadata: author(s), commit count (see [REFERENCE.md](REFERENCE.md) for git commands)
 
+**Ticket & acceptance-criteria discovery (both modes):**
+- Extract a ticket-key-shaped token (e.g. `PROJ-123`) from the PR title, PR description, or branch name (Branch mode: the branch name and/or recent commit messages)
+- If found, search available MCP tools via `ToolSearch` for a matching issue-tracker capability (Jira, Linear, GitHub Issues, etc.) and fetch the ticket
+- If the ticket has children/sub-issues (an epic with child stories/bugs, a parent issue with sub-issues, etc.), fetch and check each child too, one level deep — same mechanism, no tracker-specific naming
+- Compare the diff against each ticket's description/acceptance criteria and classify per ticket: **covered**, **partially covered**, or **not covered**
+- If no ticket-shaped token is found, no matching tracker tool is reachable, or the fetch fails: skip this check entirely and omit it from the report — this is best-effort and must never block the review on an inability to verify
+
 ### 3. Set Up Review Environment
 
 Determine whether subagents will operate against a disposable **read-only worktree** (default) or the **current working directory** (`use-cwd`, opt-in — detected per Quick Start above). This is a per-invocation signal only; never carry it over from a prior review.
@@ -145,11 +152,11 @@ The subagent returns a final confirmed list, an updated dismissed list (with cro
 ### 7. Produce Report
 
 **PR mode** — render both parts from [REFERENCE.md](REFERENCE.md):
-1. **Part 1 — Findings**: PR header (including the **Verification** line — read-only worktree vs. live working directory with tests executed), summary, findings table, unverified findings section (if any)
+1. **Part 1 — Findings**: PR header (including the **Verification** line — read-only worktree vs. live working directory with tests executed), summary, **Acceptance Criteria section (if a ticket was found and checked in Step 2)**, findings table, unverified findings section (if any)
 2. **Part 2 — Final Review Comment**: verdict + rationale, "What's good", "Suggestions"
 
 **Branch mode** — render the single report from [REFERENCE.md](REFERENCE.md):
-1. Header (including the **Verification** line), summary, findings table, unverified findings section (if any)
+1. Header (including the **Verification** line), summary, **Acceptance Criteria section (if a ticket was found and checked in Step 2)**, findings table, unverified findings section (if any)
 2. Verdict + rationale
 3. Suggestions / Further Considerations
 
@@ -158,7 +165,7 @@ The subagent returns a final confirmed list, an updated dismissed list (with cro
 | Condition | PR mode | Branch mode |
 |-----------|---------|-------------|
 | No blockers | ✅ APPROVE | ✅ READY TO MERGE |
-| 🔴 Critical findings (or CI failing in PR mode, or secrets detected) | 🔄 REQUEST CHANGES | 🔄 NEEDS WORK |
+| 🔴 Critical findings (or CI failing in PR mode, secrets detected, or a checked ticket's acceptance criteria are not fully met) | 🔄 REQUEST CHANGES | 🔄 NEEDS WORK |
 | Observations only, no hard blockers | 💬 COMMENT ONLY | 💬 LOOKS OK |
 
 In PR incremental mode, label each finding as **[NEW]**, **[PREVIOUSLY RAISED]**, or **[RESOLVED]**:
@@ -255,6 +262,10 @@ The result is always: **frontmatter → latest completed review → `---` → `<
 
 - Secrets findings always sorted to top of the findings table, always 🔴 Critical
 - Do not review commits the user has excluded as boilerplate/generated
+- **Ticket & acceptance criteria (both modes):**
+  - Best-effort only — never delay or block the review because a ticket lookup failed, timed out, or no ticket-shaped token was found
+  - Only children/sub-issues one level deep are checked automatically; deeper hierarchies are out of scope
+  - Unmet acceptance criteria affect the verdict the same way a 🔴 Critical finding does — see the verdict table in Step 7
 - **Review environment (both modes):**
   - Default to a disposable, detached, **read-only** worktree — never read from the ambient working directory unless `use-cwd` was explicitly granted
   - `use-cwd` aborts the entire review immediately if the working directory is not clean — never auto-stash, never auto-commit, never silently fall back to the worktree path
