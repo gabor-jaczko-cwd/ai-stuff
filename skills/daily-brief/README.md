@@ -71,11 +71,20 @@ no `--add-dir`, no credential path baked into the command. Notes:
 
 ### Gotchas (found by testing this exact command)
 
-- **Working directory is what makes the relative rules work.** If you
-  invoke `claude -p` from anywhere other than this skill's own directory,
-  every one of these allow rules stops matching and you're back to
-  interactive approval prompts (which never resolve headlessly — see
-  `SKILL.md`'s calendar-fetch failure handling for what happens then).
+- **Working directory is what makes the relative rules work — and it's the
+  `PWD` environment variable that matters, not just the OS-level working
+  directory.** A shell's `cd` sets both, which is why the crontab form above
+  (`cd ... && claude ...`, run through a shell) works with `WorkingDirectory`
+  never mentioned at all. systemd's `WorkingDirectory=` directive only sets
+  the OS-level cwd — it does *not* set `PWD`, since that's normally a
+  shell's job — and without `PWD` set, every relative allow rule silently
+  stops matching and you're back to interactive approval prompts (which
+  never resolve headlessly — see `SKILL.md`'s calendar-fetch failure
+  handling for what happens then). Confirmed by testing: `WorkingDirectory=`
+  alone fails with the `config.yaml` read denied; adding the matching
+  `Environment=PWD=...` line (as in the example below) fixes it. If you
+  invoke `claude -p` any other way, make sure whatever you use actually sets
+  `PWD` to this skill's own directory, not just the process's cwd.
 - **No log file by design.** This setup doesn't redirect output anywhere —
   the Slack message arriving is the signal that it worked. If a morning's
   brief doesn't show up, debug by running the command above manually.
@@ -109,6 +118,7 @@ Description=Daily Brief
 [Service]
 Type=oneshot
 WorkingDirectory=<path to this skill's own directory>
+Environment=PWD=<path to this skill's own directory, same value as above>
 ExecStart=/usr/bin/claude -p "/daily-brief" --permission-mode default --allowedTools "Read(./config.yaml)" "mcp__claude_ai_Microsoft_365__outlook_calendar_search" "Bash(./convert_tz.py *)" "Bash(gh api graphql *)" "Bash(./send_slack_message.py *)"
 ```
 
