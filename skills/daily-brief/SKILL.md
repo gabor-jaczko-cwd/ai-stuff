@@ -23,6 +23,8 @@ gitignored; never commit it.
    - `repos` — list of `owner/repo` strings to track
    - `slack_user_id` — your Slack member ID (Slack profile → "Copy member ID")
    - `slack_bot_token_path` — filesystem path to a Slack bot token file
+   - `display_timezone` — IANA timezone name to render calendar times in
+     (e.g. `Europe/London`)
 2. If you don't already have a Slack bot token: create an app at
    api.slack.com/apps, add the `chat:write` bot scope, install the app to
    your workspace, then save its Bot User OAuth Token to the path you put in
@@ -50,11 +52,38 @@ Call the Outlook calendar search tool:
 
 Drop any event with `isCancelled: true`. Sort by start time ascending.
 
+**Convert times before rendering — don't trust the tool's `timeZone` label at
+face value.** The tool's documented contract is that `{dateTime, timeZone}`
+is wall-clock time already in your mailbox's timezone, but it has a known bug
+(as of 2026-08, reported upstream) where it always returns `timeZone: "UTC"`
+regardless of the actual mailbox setting — silently handing back true UTC
+instead of local wall-clock time, even though the mailbox is correctly set to
+a DST-aware zone. Work around it:
+
+- If an event's `timeZone` is exactly `"UTC"`: convert `dateTime` from UTC to
+  `display_timezone` (from `config.yaml`) using real timezone-database
+  tooling, in **one** Bash call for every event's start/end at once — never
+  by hand, and never by asking the model to reason about DST offsets itself,
+  which is exactly the kind of arithmetic that silently gets these wrong:
+  ```
+  python3 -c "
+  from zoneinfo import ZoneInfo
+  from datetime import datetime
+  tz = ZoneInfo('<display_timezone>')
+  for raw in ['<dateTime_1>', '<dateTime_2>', ...]:
+      print(datetime.fromisoformat(raw).replace(tzinfo=ZoneInfo('UTC')).astimezone(tz).strftime('%H:%M'))
+  "
+  ```
+  Pass every event's start and end `dateTime` in the list, in a stable order,
+  then map the printed lines back onto their events by that order.
+- If an event's `timeZone` is anything else (e.g. the upstream bug above gets
+  fixed and it starts returning a real mailbox zone): trust `dateTime` as
+  already-correct wall-clock time and use it as-is — do not reinterpret it.
+
 For each event, render one line:
 `• <start>–<end> — <subject> (<attendee names>)`
 
-- Times: use the event's own `{dateTime, timeZone}` pair as returned — do not
-  reinterpret as UTC. Format as `HH:MM`.
+- Times: use the local time from the step above. Format as `HH:MM`.
 - All-day events: `All day — <subject>` instead of a time range.
 - Attendee names: the API only returns email addresses. Derive a display name
   from the local-part (before `@`): split on `.`, title-case each part, join
