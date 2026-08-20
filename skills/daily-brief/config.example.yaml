@@ -11,10 +11,6 @@ repos:
 # Your Slack member ID (Slack profile -> "Copy member ID").
 slack_user_id: U00000000
 
-# Filesystem path to a Slack bot token file (chmod 600). See the Setup
-# section in SKILL.md for how to create one.
-slack_bot_token_path: ~/.config/claude-notifier/slack-bot-token
-
 # IANA timezone name to render calendar times in (e.g. Europe/London,
 # America/New_York). Used to work around a calendar-tool bug that returns
 # raw UTC instead of your mailbox's local wall-clock time.

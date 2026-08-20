@@ -17,18 +17,9 @@ This skill reads a local config file — `config.yaml` in this skill's own
 directory — for your repos, GitHub login, and Slack details. That file is
 gitignored; never commit it.
 
-1. Copy `config.example.yaml` (next to this file) to `config.yaml` and fill
-   in:
-   - `github_login` — your GitHub username
-   - `repos` — list of `owner/repo` strings to track
-   - `slack_user_id` — your Slack member ID (Slack profile → "Copy member ID")
-   - `slack_bot_token_path` — filesystem path to a Slack bot token file
-   - `display_timezone` — IANA timezone name to render calendar times in
-     (e.g. `Europe/London`)
-2. If you don't already have a Slack bot token: create an app at
-   api.slack.com/apps, add the `chat:write` bot scope, install the app to
-   your workspace, then save its Bot User OAuth Token to the path you put in
-   `slack_bot_token_path` (`chmod 600` it).
+See `README.md` (next to this file) for how to create `config.yaml` and how
+to set up the scheduled headless run. This section only covers what the
+skill itself needs to know at runtime.
 
 Before doing anything else, read `config.yaml` from this skill's own
 directory. If it doesn't exist, stop and tell the user to complete Setup
@@ -55,18 +46,16 @@ Drop any event with `isCancelled: true`. Sort by start time ascending.
 **Always convert each event's time into `display_timezone`** (from
 `config.yaml`), using the event's own returned `timeZone` as the source zone
 — never render `dateTime` as-is. Do the conversion with real
-timezone-database tooling, in **one** Bash call for every event's start/end
-at once — never by hand, and never by asking the model to reason about
-offsets or DST itself, which is exactly the kind of arithmetic that silently
-gets these wrong:
+timezone-database tooling, in **one** call to this skill's own
+`convert_tz.py` script for every event's start/end at once — never by hand,
+and never by asking the model to reason about offsets or DST itself, which
+is exactly the kind of arithmetic that silently gets these wrong. Invoke it
+with a path **relative to this skill's own directory**, not an absolute
+path — `./convert_tz.py`, never `/home/.../skills/daily-brief/convert_tz.py`
+— so the headless run's permission allowlist (see `README.md`) can grant
+exactly this one fixed script rather than arbitrary Python source:
 ```
-python3 -c "
-from zoneinfo import ZoneInfo
-from datetime import datetime
-display_tz = ZoneInfo('<display_timezone>')
-for raw, src_tz in [('<dateTime_1>', '<timeZone_1>'), ('<dateTime_2>', '<timeZone_2>'), ...]:
-    print(datetime.fromisoformat(raw).replace(tzinfo=ZoneInfo(src_tz)).astimezone(display_tz).strftime('%H:%M'))
-"
+./convert_tz.py <display_timezone> <dateTime_1> <timeZone_1> <dateTime_2> <timeZone_2> ...
 ```
 Pass every event's start and end as `(dateTime, timeZone)` pairs, in a stable
 order, then map the printed lines back onto their events by that order.
@@ -286,38 +275,39 @@ tool). The MCP connector authenticates with the user's own personal OAuth
 token, so every message it sends — DM or channel, self-mentioned or not —
 is posted *as the user*, and Slack never push-notifies you for your own
 messages. A bot token is a distinct identity, so a bot-to-user DM notifies
-normally. Read the bot token from the path in `config.yaml`'s
-`slack_bot_token_path` — never print, log, or echo its contents.
+normally. The bot token lives at `slack-bot-token` in this skill's own
+directory — never print, log, or echo its contents.
 
-Run these as **two separate Bash calls** (the Bash tool doesn't persist shell
-variables between calls — each is a fresh shell, so a token/channel-id saved
-in one call is gone by the next). Call 1 (substitute `slack_bot_token_path`
-and `slack_user_id` from `config.yaml`):
-
-```
-curl -s -X POST https://slack.com/api/conversations.open \
-  -H "Authorization: Bearer $(cat <slack_bot_token_path>)" \
-  -H "Content-Type: application/json" \
-  -d '{"users":"<slack_user_id>"}'
-```
-
-Read the DM channel ID out of that response's `channel.id` field yourself
-(it's in the tool output you just saw), then use it as a literal value in
-call 2 — don't try to carry it via a shell variable:
+Send with this skill's own `send_slack_message.py` script, invoked with a
+path **relative to this skill's own directory** (`./send_slack_message.py`,
+same permission-scoping reason as `convert_tz.py` above), passing
+`slack_user_id` (from `config.yaml`) as its one argument and the composed
+message on **stdin** via a heredoc:
 
 ```
-curl -s -X POST https://slack.com/api/chat.postMessage \
-  -H "Authorization: Bearer $(cat <slack_bot_token_path>)" \
-  -H "Content-Type: application/json; charset=utf-8" \
-  -d '{"channel":"<channel id from call 1>","text":"<the composed message>"}'
+./send_slack_message.py <slack_user_id> <<'EOF'
+<the composed message>
+EOF
 ```
 
+The script handles both the `conversations.open` DM-channel lookup and the
+`chat.postMessage` send internally, JSON-encoding the payload itself via
+Python's `json` module — **never** hand-build a JSON string yourself for
+this (e.g. via a `curl -d '{"...": "..."}'` argument). The message contains
+newlines, emoji, and embedded quotes (from Slack's `<url|text>` link syntax);
+manually escaping that into a shell-quoted JSON literal is exactly the kind
+of error-prone-by-hand text-munging this skill avoids elsewhere (see the
+timezone conversion above) — a real run once hit exactly this failure mode,
+got stuck re-escaping a broken payload, and only recovered after several
+failed attempts. Passing the raw text via stdin and letting the script's own
+`json.dumps` handle escaping avoids the whole class of failure.
+
+The script prints the final Slack API response as JSON and exits non-zero
+on failure — check it for `"ok":true`; treat a non-zero exit or `"ok":false`
+as a Failures-section case (see below) rather than silently doing nothing.
 `conversations.open` is idempotent — calling it every run just returns the
 existing DM channel with the user, so there's no need to persist the channel
-ID anywhere across runs either. Check each response's `"ok"` field; if
-`false`, treat it as a Failures-section case (see below) rather than
-silently doing nothing. Escape the message text as valid JSON (quotes,
-newlines) when building the `-d` payload.
+ID anywhere across runs.
 
 After sending, report back briefly (one line) that the Daily Brief was sent.
 Don't restate the whole report back to the user in chat if this was invoked
