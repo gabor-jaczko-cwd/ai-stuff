@@ -184,28 +184,43 @@ passing`, `none` → omit the CI marker.
 
 2. Otherwise, look at human-authored reviews only:
    - No human review at all → **Updated** bucket, marked `🆕 no review yet`.
-   - Human review(s) exist → for each human reviewer, compute their
-     *standing state*: the state of their most recent `APPROVED` or
-     `CHANGES_REQUESTED` review if they have one, otherwise their most
-     recent `COMMENTED` review. Do NOT just take the timestamp-latest review
-     regardless of state — a reviewer who approves and then leaves follow-up
-     single-comment reviews (a common GitHub pattern: replying to their own
-     inline threads right after approving) still reads as "Approved" in
-     GitHub's own Reviewers panel; a later `COMMENTED` review from the same
-     person doesn't downgrade it. Picking the raw latest-by-time review
-     mislabels these as "commented by" the approver, which is wrong.
-   - Let `last_review` = whichever reviewer's standing-state review is most
-     recent across all reviewers, and `last_review_time` = its
-     `submittedAt`. Compare against `lastCommitAt`, NOT `updatedAt` — `updatedAt`
-     bumps on anything (a bot comment, a label, a reply) and doesn't mean new
-     code landed, which is what actually invalidates a review. If
-     `lastCommitAt` is newer than `last_review_time` (a commit landed after
-     the last human look) → **Updated** bucket, marked `🆕 new commits since
-     last review (<login> <state>)` from `last_review`. Otherwise →
-     **Reviewed** bucket, marked from `last_review`'s state: `✅ approved by
-     @<login>`, `🔴 changes requested by @<login>`, or `💬 commented by
-     @<login>` (only when `COMMENTED` is that reviewer's standing state, i.e.
-     they never approved or requested changes).
+   - Human review(s) exist → for each human reviewer, walk their reviews in
+     chronological order (oldest to newest, by `submittedAt`) and track two
+     things: `standing` (starts at none) and `ever_approved` (starts at
+     false). Also separately remember each reviewer's own most recent
+     `COMMENTED` `submittedAt`, for the comment-only fallback below.
+     - `APPROVED` or `CHANGES_REQUESTED` → `standing` = that state + its
+       `submittedAt`; `ever_approved` = true.
+     - `DISMISSED` → `standing` = none again (`ever_approved` stays as it
+       was).
+     - `COMMENTED` → never changes `standing` or `ever_approved`. A reviewer
+       who approves and then leaves follow-up single-comment reviews (a
+       common GitHub pattern: replying to their own inline threads right
+       after approving) still reads as "Approved" in GitHub's own Reviewers
+       panel; a later `COMMENTED` review from the same person doesn't
+       downgrade it.
+   - **If any reviewer ends with `standing` none but `ever_approved` true**
+     (a later commit got their approval/changes-requested `DISMISSED`, and
+     nobody has re-reviewed since) → **Updated** bucket, marked `🆕 new
+     commits invalidated @<login>'s review — needs a fresh look`.
+   - **Otherwise**, determine `last_review`: the reviewer with the most
+     recent non-none `standing`, or — if no reviewer has one — the reviewer
+     with the most recent `COMMENTED`. If neither exists → **Updated**
+     bucket, marked `🆕 no review yet`.
+   - **If `last_review`'s state is `APPROVED`** → **Reviewed** bucket,
+     marked `✅ approved by @<login>`. Do not compare against `lastCommitAt`
+     here: GitHub only emits `DISMISSED` once it has already decided a new
+     commit invalidates an approval (a no-op fast-forward merge does not get
+     one), and that's already handled by the `DISMISSED` check above — trust
+     it instead of re-deriving staleness from commit timestamps.
+   - **Otherwise** (`last_review`'s state is `CHANGES_REQUESTED` or
+     `COMMENTED`) — GitHub has no equivalent auto-resolution signal for
+     these, so compare `last_review`'s `submittedAt` against `lastCommitAt`,
+     NOT `updatedAt` (`updatedAt` bumps on anything — a bot comment, a
+     label, a reply — and doesn't mean new code landed): if `lastCommitAt`
+     is newer → **Updated** bucket, marked `🆕 new commits since last review
+     (<login> <state>)`; otherwise → **Reviewed** bucket, marked `🔴 changes
+     requested by @<login>` or `💬 commented by @<login>` accordingly.
 
 Render each bucket as:
 ```
