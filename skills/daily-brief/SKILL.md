@@ -52,33 +52,24 @@ Call the Outlook calendar search tool:
 
 Drop any event with `isCancelled: true`. Sort by start time ascending.
 
-**Convert times before rendering — don't trust the tool's `timeZone` label at
-face value.** The tool's documented contract is that `{dateTime, timeZone}`
-is wall-clock time already in your mailbox's timezone, but it has a known bug
-(as of 2026-08, reported upstream) where it always returns `timeZone: "UTC"`
-regardless of the actual mailbox setting — silently handing back true UTC
-instead of local wall-clock time, even though the mailbox is correctly set to
-a DST-aware zone. Work around it:
-
-- If an event's `timeZone` is exactly `"UTC"`: convert `dateTime` from UTC to
-  `display_timezone` (from `config.yaml`) using real timezone-database
-  tooling, in **one** Bash call for every event's start/end at once — never
-  by hand, and never by asking the model to reason about DST offsets itself,
-  which is exactly the kind of arithmetic that silently gets these wrong:
-  ```
-  python3 -c "
-  from zoneinfo import ZoneInfo
-  from datetime import datetime
-  tz = ZoneInfo('<display_timezone>')
-  for raw in ['<dateTime_1>', '<dateTime_2>', ...]:
-      print(datetime.fromisoformat(raw).replace(tzinfo=ZoneInfo('UTC')).astimezone(tz).strftime('%H:%M'))
-  "
-  ```
-  Pass every event's start and end `dateTime` in the list, in a stable order,
-  then map the printed lines back onto their events by that order.
-- If an event's `timeZone` is anything else (e.g. the upstream bug above gets
-  fixed and it starts returning a real mailbox zone): trust `dateTime` as
-  already-correct wall-clock time and use it as-is — do not reinterpret it.
+**Always convert each event's time into `display_timezone`** (from
+`config.yaml`), using the event's own returned `timeZone` as the source zone
+— never render `dateTime` as-is. Do the conversion with real
+timezone-database tooling, in **one** Bash call for every event's start/end
+at once — never by hand, and never by asking the model to reason about
+offsets or DST itself, which is exactly the kind of arithmetic that silently
+gets these wrong:
+```
+python3 -c "
+from zoneinfo import ZoneInfo
+from datetime import datetime
+display_tz = ZoneInfo('<display_timezone>')
+for raw, src_tz in [('<dateTime_1>', '<timeZone_1>'), ('<dateTime_2>', '<timeZone_2>'), ...]:
+    print(datetime.fromisoformat(raw).replace(tzinfo=ZoneInfo(src_tz)).astimezone(display_tz).strftime('%H:%M'))
+"
+```
+Pass every event's start and end as `(dateTime, timeZone)` pairs, in a stable
+order, then map the printed lines back onto their events by that order.
 
 For each event, render one line:
 `• <start>–<end> — <subject> (<attendee names>)`
