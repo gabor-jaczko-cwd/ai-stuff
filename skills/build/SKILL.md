@@ -31,7 +31,7 @@ Turn a spec or an existing ticket breakdown into a phased, dependency-aware plan
 This skill hardcodes no build, test or format commands. Before planning or executing, resolve the project's tooling (full detail in `references/project-context.md`):
 
 1. Read the project's `CLAUDE.md` if present.
-2. If a project profile exists at `.claude/build.md`, load it.
+2. If a project profile exists at `.claude/local/build.md`, load it.
 3. Otherwise detect tooling (`composer.json`, `package.json` scripts, `Makefile`/`justfile`, CI config) and confirm with the user before relying on it. Offer to write a profile so future runs are turnkey.
 
 Carry the resolved values through planning and into every crewman/inspector payload.

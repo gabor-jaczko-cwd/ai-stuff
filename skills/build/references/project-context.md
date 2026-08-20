@@ -5,7 +5,7 @@ This skill is portable. It resolves each project's tooling and conventions at ru
 ## Resolution order (Step 0)
 
 1. The project's `CLAUDE.md` (auto-loaded by Claude Code) for high-level conventions.
-2. A project profile at `.claude/build.md`, if present. This is preferred: explicit and stable.
+2. A project profile at `.claude/local/build.md`, if present. This is preferred: explicit and stable.
 3. Detection from the project: `composer.json`, `package.json` scripts, `Makefile` or `justfile` targets, CI config. Confirm detected commands with the user before relying on them.
 
 If nothing is found and detection is ambiguous, ask the user for the test and format commands, then offer to write a profile.
@@ -21,7 +21,7 @@ If nothing is found and detection is ambiguous, ask the user for the test and fo
 - plan location — where plans are written (default `docs/plans`).
 - tracker — which issue tracker holds the tickets/steps for this project (matches whatever `to-tickets`/`wayfinder` already resolved via `docs/agents/issue-tracker.md`; `build` does not maintain its own separate tracker config).
 
-## Profile template — `.claude/build.md`
+## Profile template — `.claude/local/build.md`
 
 ```markdown
 ---

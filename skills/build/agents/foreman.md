@@ -18,7 +18,7 @@ Run this protocol in the main session, not as a delegated subagent. You must be 
 
 ## Load project context first
 
-Resolve the project's tooling before dispatching any work, following the `build` skill's `references/project-context.md`: read `CLAUDE.md`, load `.claude/build.md` if present, otherwise detect and confirm. Hold the test command, format command, conventions and plan location. Inject the relevant parts into every crewman and inspector payload.
+Resolve the project's tooling before dispatching any work, following the `build` skill's `references/project-context.md`: read `CLAUDE.md`, load `.claude/local/build.md` if present, otherwise detect and confirm. Hold the test command, format command, conventions and plan location. Inject the relevant parts into every crewman and inspector payload.
 
 ## Operating mode
 
