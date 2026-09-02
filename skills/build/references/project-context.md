@@ -18,8 +18,9 @@ If nothing is found and detection is ambiguous, ask the user for the test and fo
 - test layout — where tests live and the framework and pattern.
 - conventions — language and framework rules crewman must follow.
 - guardrails — hard rules, for example files that must never be touched.
+- `scratch_paths` — the permissive mirror of guardrails: repo paths inspector may write throwaway verification artifacts into (for example a Dusk-testing project's gitignored `tests/Browser/Scratch/`). Optional; absent means inspector only gets the universal OS scratchpad, never a repo path. See "Validating `scratch_paths`" below.
 - plan location — where plans are written (default `docs/plans`).
-- tracker — which issue tracker holds the tickets/steps for this project (matches whatever `to-tickets`/`wayfinder` already resolved via `docs/agents/issue-tracker.md`; `build` does not maintain its own separate tracker config).
+- tracker — which issue tracker holds the tickets/steps for this project (matches whatever `to-tickets`/`wayfinder` already resolved via `docs/agents/issue-tracker.md`; `build` does not maintain its own separate tracker config). Only ticket status, claim/close, and the commit SHA go here — inspector's verdicts and review feedback never do, regardless of tracker (see `plan-structure.md`).
 
 ## Profile template — `.claude/local/build.md`
 
@@ -30,6 +31,8 @@ test_command: [e.g. npm test | pytest -q | ./gradlew test]
 format_command: [e.g. prettier -w . | black .]
 lint_command: [optional]
 plan_location: docs/plans
+scratch_paths:
+  - [e.g. tests/Browser/Scratch/]
 ---
 
 ## Conventions
@@ -41,6 +44,10 @@ plan_location: docs/plans
 ## Guardrails
 [Hard rules: files never to touch, commands never to run bare, required reviewers, etc.]
 ```
+
+## Validating `scratch_paths`
+
+Each entry grants inspector real write access, enforced by a `PreToolUse` hook — treat it with the same care as a guardrail, just in the opposite direction. Before relying on a profile's `scratch_paths`, confirm each entry is itself covered by this project's own `.gitignore`. An entry that isn't gitignored would let inspector's throwaway artifacts get committed as if they were real files, and defeats the reason this exists — reject or flag it rather than loading it silently. This check happens once, when the profile is resolved (Step 0), not per-write.
 
 `inspector` always runs `code-review`'s Standards + Spec axes, and `crewman` always leans on `tdd`/`run` where they apply — neither is project-configurable.
 

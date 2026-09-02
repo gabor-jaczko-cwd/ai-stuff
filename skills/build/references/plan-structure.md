@@ -126,26 +126,45 @@ agent: crewman
 [Explicitly what this step must not touch.]
 ```
 
-## Tracker as the record of truth
+## Tracker as the record of truth — for ticket status, not review content
 
-Whatever a step's ticket is (from `to-tickets`, or opened fresh if planning from a spec directly — one ticket per step, same `ready-for-agent`-style labeling `to-tickets` uses), foreman records progress there, not in a local file:
+Whatever a step's ticket is (from `to-tickets`, or opened fresh if planning from a spec directly — one ticket per step, same `ready-for-agent`-style labeling `to-tickets` uses), progress is still recorded there, not in a local file, for the parts a human wants to see without any plan-folder-specific knowledge:
 
-- On dispatch: the ticket is claimed/assigned, same convention as `wayfinder`.
-- On inspector's verdict: post the verdict (APPROVE or CHANGES_REQUESTED with the numbered list) as a ticket comment.
-- On commit: post the commit SHA as a ticket comment and close (or transition) the ticket.
-- A human — or a fresh `wayfinder`/`to-tickets` session — can read progress straight off the tracker, exactly as they would for any other ticket, with no plan-folder-specific knowledge required.
+- On dispatch: the ticket is claimed/assigned, same convention as `wayfinder` (foreman does this).
+- On commit: the commit SHA is posted as a ticket comment and the ticket is closed (or transitioned) (inspector does this, in the same action as the commit).
+- A human — or a fresh `wayfinder`/`to-tickets` session — can read step status straight off the tracker, exactly as they would for any other ticket.
+
+**What no longer goes to the tracker:** inspector's verdict and `CHANGES_REQUESTED` feedback. That communication is local-only — it lives in `.build-state.json` (below), never as a ticket comment, regardless of whether this project's tracker is Jira or local markdown. This keeps the crewman↔inspector feedback loop identical across tracker backends and off a project's real, human-facing ticket history. It's a deliberate scope narrowing, not an oversight — everything else about tracker usage (claim, close, SHA) is unchanged.
 
 ## Cache file (`.build-state.json`)
 
-A thin, disposable, hook-only cache — never read by a human, never the source of truth. It exists purely so `build-commit-guard.py` can check "any step done without a commit?" fast and offline instead of hitting the tracker API on every `Stop`. foreman writes it in the same update where it syncs the tracker; if the two ever disagree, the tracker wins and the cache gets overwritten from it.
+This file now holds durable review content, not just a disposable status mirror — read the note at the end of this section before assuming the old "safe to delete anytime" framing still fully applies.
+
+foreman writes `status` transitions on dispatch (`in_progress`, `in_review`); inspector writes everything else — `status: "done"`, `commit`, and the `review` field — in the same action as committing or posting `CHANGES_REQUESTED`. If the cache and the tracker's status ever disagree, the tracker wins for status/commit/ticket; there is no equivalent authority for `review`, since it no longer exists anywhere else.
 
 ```json
 {
   "feature": "feature-slug",
   "plan_path": "docs/plans/feature-slug",
   "steps": {
-    "1.1": { "status": "done", "commit": "a1b2c3d", "ticket": "1234" },
-    "1.2": { "status": "in_review", "commit": null, "ticket": "1235" }
+    "1.1": {
+      "status": "done",
+      "commit": "a1b2c3d",
+      "ticket": "1234",
+      "review": { "verdict": "APPROVE", "notes": "one-line justification, optional suggestions" }
+    },
+    "1.2": {
+      "status": "in_progress",
+      "commit": null,
+      "ticket": "1235",
+      "review": {
+        "verdict": "CHANGES_REQUESTED",
+        "feedback": [
+          "[spec] Acceptance criterion 2 not met: ... (file:line)",
+          "[standards] Duplicated Code: ... (file:line)"
+        ]
+      }
+    }
   }
 }
 ```
@@ -153,7 +172,8 @@ A thin, disposable, hook-only cache — never read by a human, never the source 
 Rules:
 
 - A step may only be written with `"status": "done"` in the same update that fills in a non-null `commit`. Never done-now-commit-later.
-- Safe to delete at any time — foreman regenerates it from the tracker on next read if it's missing. Add it to `.gitignore`.
+- `status`, `commit`, and `ticket` remain regenerable from the tracker if this file is lost — that part of the old "safe to delete anytime" claim still holds.
+- **`review` is not regenerable.** It no longer exists on the tracker (see above), so if this file is deleted, that step's review history — inspector's feedback, past `CHANGES_REQUESTED` rounds, verdict rationale — is gone for good. Treat this file as something to avoid deleting casually, even though it remains gitignored and outside version control; there is currently no mechanical guard against that loss beyond this note. If that trade-off ever stops being acceptable for a given plan, revisit rather than assume it's still fine.
 - Its presence anywhere under `docs/plans/*/.build-state.json` in the repo is exactly the gate the hooks use to decide whether they're inert. No cache file means no active `build` plan, and the hooks no-op.
 
 ## Expressing parallelism

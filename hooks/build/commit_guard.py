@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Stop hook for the `build` skill.
 
-Blocks foreman from ending its turn if `.build-state.json` shows any step
-marked `done` with no commit SHA recorded -- the hard backstop for the
-loop-protocol's commit gate (a step may only be `done` in the same update
-that fills in its commit). Inert (exit 0, no output) whenever no
-.build-state.json exists in the project, which is the case for every
-project not currently running a `build` plan.
+Blocks any layer (root, foreman, or inspector itself) from ending its turn
+if `.build-state.json` shows any step marked `done` with no commit SHA
+recorded -- the hard backstop for the loop-protocol's commit gate (a step
+may only be `done` in the same update that fills in its commit). Under the
+current design inspector is the one that should have made this true, in the
+same action as its own APPROVE (see agents/inspector.md); a trip of this
+hook means that write didn't actually happen, not that someone forgot a
+separate step. Inert (exit 0, no output) whenever no .build-state.json
+exists in the project, which is the case for every project not currently
+running a `build` plan.
 """
 import os
 import sys
@@ -44,8 +48,10 @@ def main():
     lines = [
         "build-commit-guard: cannot end this turn -- a step is marked done with no commit recorded.",
         "This violates the build skill's sign-off gate (loop-protocol.md): a step is only done",
-        "in the same update that records its commit SHA on the tracker and in the cache. Go back,",
-        "commit the step's changes, sync the tracker, and update .build-state.json before stopping.",
+        "in the same update that records its commit SHA. inspector is the agent responsible for",
+        "this (see agents/inspector.md) -- if you are inspector, finish the commit and the",
+        ".build-state.json write now. If you are foreman or root, this means inspector's own",
+        "APPROVE didn't actually complete; do not treat the step as done, re-dispatch or escalate.",
         "",
     ]
     for feature, path, bad in violations:

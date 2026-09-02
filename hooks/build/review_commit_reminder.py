@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """PostToolUse (matcher: Task) hook for the `build` skill.
 
-Fires right after an `inspector` subagent call returns, and if the verdict
-looks like APPROVE, reminds foreman to commit and sync the tracker/cache
-before moving on -- inspector's own instructions already say this, but the
-reminder is a cheap nudge against it getting lost under context pressure.
+inspector now commits and syncs .build-state.json itself, atomically with its
+own APPROVE -- there's no longer a separate foreman action to remind about.
+What's left is a sanity check: if an inspector dispatch's own response text
+looks like APPROVE but .build-state.json still shows a step marked done with
+no commit recorded, that's a real bug in inspector's own execution (it said
+APPROVE without actually completing the write), not something advisory.
+Surfaces it immediately rather than waiting for the Stop hook to catch it.
 Inert whenever no .build-state.json exists in the project.
 """
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _common import find_cache_files, read_stdin_json  # noqa: E402
+from _common import find_cache_files, load_cache, read_stdin_json, unsynced_done_steps  # noqa: E402
 
 
 def _extract_text(value):
@@ -43,7 +46,8 @@ def verdict_of(tool_response):
 
 
 def main():
-    if not find_cache_files():
+    cache_files = find_cache_files()
+    if not cache_files:
         return 0  # no active build plan in this project -- inert
 
     payload = read_stdin_json()
@@ -58,11 +62,29 @@ def main():
     if verdict != "APPROVE":
         return 0
 
-    sys.stderr.write(
-        "build-review-commit-reminder: inspector returned APPROVE. Per loop-protocol.md, "
-        "commit this step's changes now, post the SHA and verdict to the tracker, and update "
-        ".build-state.json -- before dispatching the next step or ending your turn.\n"
-    )
+    violations = []
+    for path in cache_files:
+        cache = load_cache(path)
+        if cache is None:
+            continue
+        bad = unsynced_done_steps(cache)
+        if bad:
+            violations.append((cache.get("feature", os.path.dirname(path)), bad))
+
+    if not violations:
+        return 0  # inspector's APPROVE was genuinely followed through -- nothing to say
+
+    lines = [
+        "build-review-commit-reminder: inspector's dispatch looked like APPROVE, but "
+        ".build-state.json still shows a done step with no commit recorded. Per "
+        "agents/inspector.md, inspector commits atomically with its own APPROVE -- this "
+        "means that write didn't actually complete. Do not treat the step as done; "
+        "re-check inspector's own execution before moving on.",
+    ]
+    for feature, bad in violations:
+        lines.append(f"  - {feature}: unsynced done step(s): {', '.join(bad)}")
+
+    sys.stderr.write("\n".join(lines) + "\n")
     return 2  # PostToolUse exit 2 surfaces stderr to the driving agent without undoing the tool call
 
 
