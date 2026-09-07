@@ -68,15 +68,18 @@ Determine whether subagents will operate against a disposable **read-only worktr
 
 **If `use-cwd` was requested:**
 1. Run `git status`. If the working directory has *any* uncommitted changes (tracked or untracked), **abort the review immediately** with a clear error telling the user to commit or stash and re-run. Do not fall back to the worktree path silently, and do not do any other setup work first.
-2. If clean:
+2. If clean, check out the **real** branch — never a synthetic name invented for the review — since this is the branch left behind in point 3:
    - **Branch mode:** fetch and `git checkout <branch>` directly in the working directory
-   - **PR mode:** `git fetch origin pull/<number>/head:<local-ref>` then `git checkout <local-ref>` (same-repo branches only — this skill does not special-case fork PRs)
+   - **PR mode:** use the PR's actual head branch name (`head.ref`, from the metadata already fetched in Step 2), same-repo branches only — this skill does not special-case fork PRs:
+     - `git fetch origin <head-branch>`
+     - If a local branch named `<head-branch>` already exists, check for commits it has that `origin/<head-branch>` doesn't (`git log origin/<head-branch>..<head-branch>`). If any exist, **abort** and tell the user — never silently discard local work sitting on that branch name.
+     - Otherwise: `git checkout -B <head-branch> origin/<head-branch>`. `-B` both creates the branch on a first-time review and force-resets it to match the fetched remote tip on every later one — so a force-push (rebase, amend) on the PR is always picked up cleanly instead of leaving the local branch stuck on stale or diverged history.
 3. Do **not** restore the previously-checked-out branch after the review finishes — leave the working directory on the reviewed branch, since the user explicitly opted into using it live.
 4. Subagents read directly from the working directory (no worktree exists in this mode). This is also the only mode where the coherence subagent may execute tests/tooling (Step 5).
 
 **Otherwise (default):**
 1. Resolve the source ref to a commit SHA (`git rev-parse <branch>`, or the PR head SHA)
-2. In PR mode, fetch the PR head explicitly if not already done: `git fetch origin pull/<number>/head:<local-ref>`
+2. In PR mode, fetch the PR head explicitly if not already done — into `FETCH_HEAD`, **not** a named local ref, so this disposable path never leaves a branch behind either: `git fetch origin pull/<number>/head`
 3. If a worktree already exists at the target path from a stale/interrupted prior review, remove it first (`git worktree remove --force`)
 4. Create a **detached** worktree at that SHA: `git worktree add --detach ./tmp/review-worktrees/<pr-number|branch-name> <sha>` — detached so it never conflicts with a branch checked out elsewhere (including the main worktree)
 5. **If `git worktree add` fails for any reason, abort the review** with the underlying git error. Do not fall back to reading from the ambient working directory — that reintroduces the exact unreliable-checkout problem this step exists to fix.

@@ -413,8 +413,9 @@ git --no-pager diff --stat <base>...<branch>
 # Resolve a ref to a commit SHA
 git rev-parse <branch>
 
-# PR mode: fetch the PR head explicitly as a local ref
-git fetch origin pull/<number>/head:<local-ref>
+# PR mode (default/worktree path): fetch the PR head into FETCH_HEAD only —
+# no named local branch, so this disposable path never leaves a stray ref behind
+git fetch origin pull/<number>/head
 
 # Remove a stale worktree from an interrupted prior review
 git worktree remove --force ./tmp/review-worktrees/<pr-number|branch-name>
@@ -431,7 +432,13 @@ git worktree remove ./tmp/review-worktrees/<pr-number|branch-name>
 # use-cwd mode: verify clean before touching the working directory
 git status --porcelain   # any output at all → abort the review
 
-# use-cwd mode: check out the reviewed branch directly (only after the clean check passes)
-git checkout <branch>                              # branch mode
-git fetch origin pull/<number>/head:<local-ref> && git checkout <local-ref>   # PR mode
+# use-cwd mode: check out the reviewed branch directly (only after the clean check passes) —
+# always the PR's real head branch name, never a synthetic one, since it's left checked out afterward
+git checkout <branch>                                          # branch mode
+
+# PR mode: fetch the PR's actual head branch (head.ref from metadata), then guard against
+# clobbering local-only work before force-updating to the remote tip (handles force-pushes)
+git fetch origin <head-branch>
+git log origin/<head-branch>..<head-branch>        # any output → abort, local branch has unpushed commits
+git checkout -B <head-branch> origin/<head-branch> # creates or force-resets to match the remote exactly
 ```
