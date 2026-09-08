@@ -114,23 +114,14 @@ Work through the plan top-down (blockers first):
 - Stage only the files modified for each finding: `git add <file1> <file2> && git commit -m "review: <summary>"`
 - Do **not** push or post anything yet
 
-### 5. Test & Validate
+### 5. Test, Validate & Prepare Replies
 
 Before prompting the user:
 
 1. Check the project guidelines (CLAUDE.md, Makefile, package.json, composer.json, etc.) for a test command
 2. If a test command is found, identify tests relevant to the changed files and run them — show the full output
-3. If tests pass, prompt: _"Tests passed. Check the diff and reply 'approved' when happy, or describe any issues."_
-4. If tests fail, return to Step 4 to fix, re-commit, and re-run before asking the user
-5. If no test command is detectable, prompt: _"No test command detected. Please run your tests and check the diff. Reply 'approved' when happy, or describe any issues."_
-
-Only continue once the user has explicitly approved.
-
-### 6. Record Outcomes
-
-#### PR mode — edit replies
-
-Write a temporary reply file at `/tmp/review-replies.md` — one entry per actioned or declined comment:
+3. If tests fail, return to Step 4 to fix, re-commit, and re-run before asking the user
+4. **PR mode:** write a temporary reply file at `/tmp/review-replies.md` — one entry per actioned or declined comment:
 
 ```markdown
 # Review Replies
@@ -148,11 +139,21 @@ reply: |
 ---
 ```
 
-Prompt: _"Reply file written to `/tmp/review-replies.md`. Edit the reply text and set `skip: true` for any comment you want to skip. Reply 'approved' when ready."_ Wait for approval.
+5. Prompt once, covering both the code and the replies:
+   - **PR mode, tests passed:** _"Tests passed. Check the diff, and review/edit the draft replies in `/tmp/review-replies.md` (set `skip: true` to skip posting one). Reply 'approved' when happy with both, or describe any issues."_
+   - **PR mode, no test command detected:** _"No test command detected. Please run your tests and check the diff, and review/edit the draft replies in `/tmp/review-replies.md`. Reply 'approved' when happy with both, or describe any issues."_
+   - **Local mode, tests passed:** _"Tests passed. Check the diff and reply 'approved' when happy, or describe any issues."_
+   - **Local mode, no test command detected:** _"No test command detected. Please run your tests and check the diff. Reply 'approved' when happy, or describe any issues."_
+6. Only continue once the user has explicitly approved.
+7. **PR mode:** after approval, validate the reply file structure:
+   - Every entry must have a `## <n>. Comment #<id>` header, a `skip:` field (true/false), and a `reply:` block
+   - If any entry is malformed, report exactly which entry and what is wrong, and prompt: _"Fix the malformed entries and reply 'approved' again."_ Do not publish until the file is valid.
 
-Before proceeding to Step 7, **validate the reply file structure**:
-- Every entry must have a `## <n>. Comment #<id>` header, a `skip:` field (true/false), and a `reply:` block
-- If any entry is malformed, report exactly which entry and what is wrong, and prompt: _"Fix the malformed entries and reply 'approved' again."_ Do not publish until the file is valid.
+### 6. Record Outcomes
+
+#### PR mode
+
+No separate step — replies were already drafted and approved in Step 5.
 
 #### Local mode — update save file
 
@@ -210,8 +211,8 @@ If any comments were rejected, list them:
 
 ## Rules
 
-- Never push commits until the user has passed the Test & Validate gate (Step 5)
-- **PR mode:** never post replies until the user has approved the reply file (Step 6) and it has passed validation
+- Never push commits until the user has passed the Test, Validate & Prepare Replies gate (Step 5)
+- **PR mode:** never post replies until the user has approved the reply file (Step 5) and it has passed validation
 - Never mark an item resolved without either implementing a fix or a documented rejection reason
 - Keep commits small and scoped to the item being addressed; stage only the files changed for each finding
 - Do not rewrite unrelated code while addressing review findings
