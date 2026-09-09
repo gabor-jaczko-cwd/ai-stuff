@@ -40,6 +40,7 @@ Example eval spec:
 ## Running evals
 
 - Run automated evals with the project's test command. You may filter to a subset while iterating, but the step's full eval set must pass before sign-off.
+- If the full eval set (or the project's CI command) routinely runs longer than a single foreground Bash call can wait, see `long-running-commands.md` before writing your own wait loop — a hand-written `pgrep`-based poll has already caused permanently-stuck background shells in production use.
 - Format changed files with the project's format command before reporting, honouring any "never run bare" caveats in the profile.
 - crewman writes and runs the evals and performs the browser check. inspector may re-run the automated evals read-only as part of its Standards/Spec review. foreman gates on the result.
 - crewman decides test-first vs test-after per step — no fixed rule — but test-first, following the `tdd` skill's red-green-refactor discipline, is preferred where it applies.

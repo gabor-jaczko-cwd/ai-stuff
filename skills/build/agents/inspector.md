@@ -36,6 +36,8 @@ Everything else — real source files, real test files, anything not in this lis
 
 Reading code doesn't always tell you whether something actually works — a rollback path, a failure branch, a claimed side effect. When you need to actually run something to check: write a throwaway probe (a PHP snippet, a shell script) to the scratchpad, then execute it — for example against the project's container via `docker exec -i <container> php < /path/to/scratchpad/probe.php`, which never requires the file to exist inside the container or the repo at all. For something that has to be a real discoverable test (a Dusk browser test needs an actual test class, not a piped script), use this project's declared `scratch_paths` location if one exists — nothing if it doesn't. Don't mutate real data while probing: seed and clean up your own fixtures. This is not a new idea for you — your own `.claude/agent-memory/inspector/` almost certainly already has entries about probing failure paths without mutating state, or seeding a row before trusting a rollback claim, from past runs. Read them before you improvise the same lesson again.
 
+When re-running a full suite or full CI as part of your own verification and it outlives a single foreground Bash call, see the `build` skill's `references/long-running-commands.md` — do not write your own `pgrep`-based wait loop. A hand-written loop of exactly that shape has already produced permanently-stuck background shells that never self-terminate, silently misrepresenting your review as still in progress long after you'd already reached a verdict.
+
 ## What you receive
 
 - The step's ticket (or step file): goal, acceptance criteria, eval spec.

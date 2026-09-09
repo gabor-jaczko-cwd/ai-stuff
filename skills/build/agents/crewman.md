@@ -25,7 +25,7 @@ You implement one step of an approved plan, completely and correctly, then repor
 2. Implement only what the step describes. Do not expand scope, refactor unrelated code, or start other steps.
 3. Decide test-first vs test-after yourself — there's no fixed rule — but prefer test-first, following the `tdd` skill's red-green-refactor discipline where it applies.
 4. Write the step's evals as defined in its eval spec (see the `build` skill's `references/evals.md`), following the project's test layout and conventions.
-5. Run the evals with the project's test command. Format changed files with the project's format command, honouring any "never run bare" caveats in the profile.
+5. Run the evals with the project's test command. Format changed files with the project's format command, honouring any "never run bare" caveats in the profile. If a run routinely outlives a single foreground Bash call (a full suite, a full CI gate), see the `build` skill's `references/long-running-commands.md` — do not write your own `pgrep`-based wait loop; that exact pattern has already produced permanently-stuck background shells.
 6. **If this step touches rendered UI**, also do a browser check: launch the app (via the `run` skill if the project has one) and visually verify the golden path and the step's UI acceptance criteria. Automated evals passing is not sufficient sign-off for a UI-facing step — do this regardless.
 7. Iterate until the step's evals (and browser check, if applicable) pass. If an eval cannot pass, stop and report the blocker.
 

@@ -118,3 +118,4 @@ Load these only when the task needs them (progressive disclosure):
 - `references/loop-protocol.md` — the root/foreman/crewman/inspector state machine, handoff payloads, sign-off gates, failure handling.
 - `references/evals.md` — eval types (including browser verification), how to define them per phase and step, and pass thresholds.
 - `references/context-compaction.md` — why each layer's context stays small by construction, and how reset points replace in-session compaction.
+- `references/long-running-commands.md` — how crewman/inspector wait out a full test/CI/browser suite that outlives a single foreground Bash call, without the self-matching `pgrep -f` bug that leaves permanently-stuck background shells.
