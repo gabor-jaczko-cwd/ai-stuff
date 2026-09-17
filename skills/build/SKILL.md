@@ -21,7 +21,7 @@ Turn a spec or an existing ticket breakdown into a phased, dependency-aware plan
 `build` deliberately reuses what already works rather than reinventing it:
 
 - **Planning input is flexible** — from a `to-spec` document (decomposed itself) or an existing `to-tickets` breakdown (tickets become steps, blocking edges become `depends_on`). Decided per case.
-- **State lives on the tracker for status, and in `.build-state.json` for review content** — see `references/plan-structure.md` for the exact split. Ticket claim/close/SHA still goes through the tracker as `wayfinder` does; verdicts and `CHANGES_REQUESTED` feedback are local-only, regardless of tracker.
+- **State lives on the tracker for status, and in `.build-state.json` for live review content** — approved steps' full review content is archived to a `.build-state.log.jsonl` sidecar to keep the cache bounded; see `references/plan-structure.md` for the exact split. Ticket claim/close/SHA still goes through the tracker as `wayfinder` does; verdicts and `CHANGES_REQUESTED` feedback are local-only, regardless of tracker.
 - **inspector reuses `code-review`'s two-axis machinery**, scoped to one step's diff instead of a whole branch — and also runs the whole-branch pass at plan close (see below).
 - **crewman leans on `tdd`** for test-first discipline and the `run` skill for UI verification (see `references/evals.md`).
 - **At plan close, inspector runs a final whole-branch `/code-review`** over the entire commit range — catches cross-phase drift no per-step gate would. See `references/loop-protocol.md`.
@@ -107,7 +107,7 @@ Guardrails:
 ## Output rules
 
 - Planning artifacts go under the project's plan location (default `docs/plans/[feature-slug]/`).
-- Step/phase status lives on the tracker; `.build-state.json` (`references/plan-structure.md`) also carries review content that exists nowhere else — its `status`/`commit`/`ticket` fields are regenerable from the tracker if lost, but its `review` field is not. Gitignored by convention, but no longer casually disposable the way it once was.
+- Step/phase status lives on the tracker; `.build-state.json` (`references/plan-structure.md`) carries live review content — in-flight `CHANGES_REQUESTED` feedback, and a compact `{"verdict": "APPROVE"}` pointer for done steps. Its `status`/`commit`/`ticket` fields are regenerable from the tracker if lost; live `CHANGES_REQUESTED` feedback is not. Full review history for approved steps is archived to a sibling `.build-state.log.jsonl` the moment inspector approves — that's the only durable copy, and it's what keeps the cache bounded on a long plan. Both files are gitignored by convention, neither casually disposable.
 
 ## References
 

@@ -16,6 +16,7 @@ docs/plans/[feature-slug]/
       README.md
       01-[step-slug].md
   .build-state.json             hook-only cache — see "Cache file" below. Not the record of truth; safe to gitignore.
+  .build-state.log.jsonl        append-only archive of approved steps' full review content — see "Cache file" below. Gitignore this too.
 ```
 
 Number phases and steps with zero-padded prefixes so they sort in intended order. Slugs are kebab-case.
@@ -136,9 +137,9 @@ Whatever a step's ticket is (from `to-tickets`, or opened fresh if planning from
 
 **What no longer goes to the tracker:** inspector's verdict and `CHANGES_REQUESTED` feedback. That communication is local-only — it lives in `.build-state.json` (below), never as a ticket comment, regardless of whether this project's tracker is Jira or local markdown. This keeps the crewman↔inspector feedback loop identical across tracker backends and off a project's real, human-facing ticket history. It's a deliberate scope narrowing, not an oversight — everything else about tracker usage (claim, close, SHA) is unchanged.
 
-## Cache file (`.build-state.json`)
+## Cache file (`.build-state.json`) and its log (`.build-state.log.jsonl`)
 
-This file now holds durable review content, not just a disposable status mirror — read the note at the end of this section before assuming the old "safe to delete anytime" framing still fully applies.
+The cache holds *live* review content, not a disposable status mirror — but it stays bounded because a step's full review content only lives there while the step is still in flight. The moment inspector approves a step, the full content moves to an append-only sidecar log next to it, and the cache keeps only a compact pointer. This split exists because early versions of this skill kept every step's full review content in the cache forever, including long-approved steps nobody would ever read again — on a long plan (many phases, several `CHANGES_REQUESTED` rounds with quoted hunks per step) that grows the cache unboundedly. The log is where the durable history actually lives now; read the rules below before assuming either file is safe to delete casually.
 
 foreman writes `status` transitions on dispatch (`in_progress`, `in_review`); inspector writes everything else — `status: "done"`, `commit`, and the `review` field — in the same action as committing or posting `CHANGES_REQUESTED`. If the cache and the tracker's status ever disagree, the tracker wins for status/commit/ticket; there is no equivalent authority for `review`, since it no longer exists anywhere else.
 
@@ -151,7 +152,7 @@ foreman writes `status` transitions on dispatch (`in_progress`, `in_review`); in
       "status": "done",
       "commit": "a1b2c3d",
       "ticket": "1234",
-      "review": { "verdict": "APPROVE", "notes": "one-line justification, optional suggestions" }
+      "review": { "verdict": "APPROVE" }
     },
     "1.2": {
       "status": "in_progress",
@@ -169,12 +170,20 @@ foreman writes `status` transitions on dispatch (`in_progress`, `in_review`); in
 }
 ```
 
+`.build-state.log.jsonl` is one JSON object per line, append-only, never rewritten or read back by any agent — it's a durable record for a human, not part of the loop:
+
+```jsonl
+{"step": "1.1", "ts": "2026-09-17T12:00:00Z", "commit": "a1b2c3d", "verdict": "APPROVE", "notes": "one-line justification, optional suggestions"}
+```
+
 Rules:
 
 - A step may only be written with `"status": "done"` in the same update that fills in a non-null `commit`. Never done-now-commit-later.
-- `status`, `commit`, and `ticket` remain regenerable from the tracker if this file is lost — that part of the old "safe to delete anytime" claim still holds.
-- **`review` is not regenerable.** It no longer exists on the tracker (see above), so if this file is deleted, that step's review history — inspector's feedback, past `CHANGES_REQUESTED` rounds, verdict rationale — is gone for good. Treat this file as something to avoid deleting casually, even though it remains gitignored and outside version control; there is currently no mechanical guard against that loss beyond this note. If that trade-off ever stops being acceptable for a given plan, revisit rather than assume it's still fine.
-- Its presence anywhere under `docs/plans/*/.build-state.json` in the repo is exactly the gate the hooks use to decide whether they're inert. No cache file means no active `build` plan, and the hooks no-op.
+- **On `APPROVE`**, inspector does three things atomically: commit, append one line to `.build-state.log.jsonl` with the step id, timestamp, commit SHA, and the full verdict (justification + any non-blocking suggestions), then write the compact `review: {"verdict": "APPROVE"}` — not the full text — into `.build-state.json`, discarding any prior `CHANGES_REQUESTED` feedback for that step now that it's resolved. This is what keeps the cache from growing over the life of a plan: nothing ever needs a done step's full review text again, so it doesn't have to stay in the file every other tool call reads and writes.
+- **While a step is `in_progress`/`in_review`**, its `CHANGES_REQUESTED` feedback stays live and full in `.build-state.json` — not archived — because crewman reads it directly on its next dispatch. Only an `APPROVE` triggers the compact-and-archive step above.
+- `status`, `commit`, and `ticket` remain regenerable from the tracker if the cache is lost — that part of the old "safe to delete anytime" claim still holds for the cache.
+- **The log is not regenerable.** Full review history — inspector's past feedback, verdict rationale — exists nowhere else once archived. It's gitignored and outside version control, same as the cache, with no mechanical backup beyond this note. Losing the cache alone (e.g. a manual reset) no longer costs a plan its whole review history, only the live `CHANGES_REQUESTED` feedback for steps currently in flight.
+- Its presence anywhere under `docs/plans/*/.build-state.json` in the repo is exactly the gate the hooks use to decide whether they're inert. No cache file means no active `build` plan, and the hooks no-op. The log's presence isn't part of that gate.
 
 ## Expressing parallelism
 

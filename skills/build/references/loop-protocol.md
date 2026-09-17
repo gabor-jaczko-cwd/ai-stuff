@@ -47,7 +47,7 @@ Keep payloads tight. Pass references by path/ticket-id, not by pasting whole fil
 - A pointer to crewman's report (inspector reads it directly; foreman doesn't relay its content).
 - The project's documented standards sources, exactly as `code-review` would gather them for a normal invocation, plus any `scratch_paths` from the resolved project profile.
 
-**Inspector's output:** written directly to `.build-state.json`, not returned as text foreman relays onward — `APPROVE` (commit SHA, one-line justification, optional non-blocking suggestions) or `CHANGES_REQUESTED` (numbered, file-specific, severity-ordered items, each tagged `[standards]` or `[spec]`). See `plan-structure.md` for the exact schema.
+**Inspector's output:** written directly to `.build-state.json`, not returned as text foreman relays onward — `APPROVE` (commit SHA, one-line justification, optional non-blocking suggestions — the full text goes to the `.build-state.log.jsonl` sidecar, only a compact `{"verdict": "APPROVE"}` stays in the live cache) or `CHANGES_REQUESTED` (numbered, file-specific, severity-ordered items, each tagged `[standards]` or `[spec]`, kept live in the cache while the step is in flight). See `plan-structure.md` for the exact schema.
 
 ### How inspector runs the two axes
 

@@ -2,8 +2,9 @@
 """PreToolUse hook (matcher: Write|Edit|Bash) for the `build` skill.
 
 inspector legitimately needs Bash (running evals, docker exec, throwaway
-verification probes) and Write/Edit (committing, syncing .build-state.json,
-its own agent-memory, scratch verification artifacts) -- unlike foreman, its
+verification probes) and Write/Edit (committing, syncing .build-state.json
+and its append-only .build-state.log.jsonl sidecar, its own agent-memory,
+scratch verification artifacts) -- unlike foreman, its
 tools can't just be withheld. This hook is the actual enforcement of the
 allowlist described in agents/inspector.md: real source/test files stay off
 limits at the tool level, not just by instruction.
@@ -22,7 +23,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _common import agent_type, is_under, parse_scratch_paths, plan_paths, read_stdin_json  # noqa: E402
+from _common import agent_type, is_under, log_path_for, parse_scratch_paths, plan_paths, read_stdin_json  # noqa: E402
 
 ALLOWED_GIT_SUBCOMMANDS = {
     "add", "commit", "diff", "show", "status", "log", "blame", "rev-parse", "ls-files", "describe",
@@ -45,6 +46,8 @@ def write_edit_allowed(file_path, cwd):
 
     for _plan_md, cache_path in plan_paths(cwd):
         if target == cache_path:
+            return True
+        if target == log_path_for(cache_path):
             return True
 
     if is_under(target, os.path.join(cwd, ".claude", "agent-memory", "inspector")):
@@ -97,7 +100,8 @@ def main():
         if file_path and not write_edit_allowed(file_path, cwd):
             sys.stderr.write(
                 "build-inspector-scope-guard: blocked. inspector's Write/Edit is scoped to "
-                ".build-state.json, .claude/agent-memory/inspector/**, the OS scratchpad, and "
+                ".build-state.json, its .build-state.log.jsonl sidecar, "
+                ".claude/agent-memory/inspector/**, the OS scratchpad, and "
                 "this project's declared scratch_paths -- see agents/inspector.md. "
                 f"Requested: {file_path}. Real source/test changes belong in CHANGES_REQUESTED "
                 "feedback for crewman, not a direct edit.\n"

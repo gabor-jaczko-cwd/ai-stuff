@@ -14,6 +14,7 @@ import re
 
 SKIP_DIRS = {".git", "node_modules", "vendor", "dist", "build", ".venv", "venv", "__pycache__"}
 CACHE_FILENAME = ".build-state.json"
+LOG_FILENAME = ".build-state.log.jsonl"
 MAX_DEPTH = 6
 
 
@@ -80,6 +81,14 @@ def plan_paths(cwd=None):
         plan_md = os.path.join(os.path.dirname(cache_path), "PLAN.md")
         pairs.append((os.path.abspath(plan_md), os.path.abspath(cache_path)))
     return pairs
+
+
+def log_path_for(cache_path):
+    """The append-only sidecar log path for a given .build-state.json path -- see
+    plan-structure.md's Cache file section. inspector archives a step's full review
+    content here on APPROVE, which is what keeps the live cache bounded over a long plan.
+    """
+    return os.path.join(os.path.dirname(cache_path), LOG_FILENAME)
 
 
 def is_under(path, base):
