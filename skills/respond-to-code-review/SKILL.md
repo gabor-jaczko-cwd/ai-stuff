@@ -102,7 +102,20 @@ Produce a prioritised action list. For any ambiguous items, include the clarifyi
 - Finding #<n>: <one targeted question>
 ```
 
-**PR mode:** include a draft reply message for each item — whether actioning it or declining it.
+**PR mode:** include a draft reply message for each item — whether actioning it or declining it. State the **reply style** at the top of the plan (see "Reply style" below): _individual replies_ or _single grouped reply_.
+
+#### Reply style (PR mode)
+
+To keep reviewers' inboxes quiet, the reply style depends on how many **inline review threads** (comments attached to a file/line) the plan responds to, whether actioned or declined:
+
+| Inline threads to respond to | Reply style |
+|------------------------------|-------------|
+| 3 or fewer | **Individual replies** — one reply per thread, then resolve it |
+| More than 3 | **Single grouped reply** — one PR-level comment covering every thread; the inline threads get **no reply of their own**, only a "resolved" status |
+
+- Count only inline threads. General PR conversation comments (not attached to a line) are never grouped — reply to those individually.
+- Do not count items the user chose to skip or that are still awaiting a clarification.
+- The grouped reply is one PR-level comment (not a thread reply), so it sends one notification instead of one per thread.
 
 Present the plan to the user and wait for approval (and answers to any clarifications) before implementing.
 
@@ -121,7 +134,9 @@ Before prompting the user:
 1. Check the project guidelines (CLAUDE.md, Makefile, package.json, composer.json, etc.) for a test command
 2. If a test command is found, identify tests relevant to the changed files and run them — show the full output
 3. If tests fail, return to Step 4 to fix, re-commit, and re-run before asking the user
-4. **PR mode:** write a temporary reply file at `/tmp/review-replies.md` — one entry per actioned or declined comment:
+4. **PR mode:** write a temporary reply file at `/tmp/review-replies.md`, using the reply style chosen in Step 3.
+
+**Individual replies** (3 or fewer inline threads) — one entry per actioned or declined comment:
 
 ```markdown
 # Review Replies
@@ -139,6 +154,39 @@ reply: |
 ---
 ```
 
+**Single grouped reply** (more than 3 inline threads) — one `## Grouped reply` entry that carries the reply text, plus one `resolve` entry per thread. The threads receive no reply; they are only resolved:
+
+```markdown
+# Review Replies
+<!-- Edit 'reply' text freely. Set skip: true to skip posting the grouped comment.
+     Set resolve: false to leave a thread open. Threads never get an individual reply. -->
+
+## Grouped reply
+
+skip: false
+
+reply: |
+  Thanks @<reviewer> — addressed the review comments in <sha-range>:
+
+  - `<file>:<line>` (#<id>) — <fixed: what changed | declined: reason>
+  - `<file>:<line>` (#<id>) — <fixed: what changed | declined: reason>
+  - ...
+
+---
+
+## Resolve
+
+### 1. Comment #<id> (@<reviewer>) — `<file>:<line>`
+
+> <original comment text quoted here>
+
+resolve: true
+
+---
+```
+
+If the inline threads come from several reviewers, still post one grouped reply and mention each reviewer once. General PR conversation comments in the same review are not part of the group — give them individual entries in the first format alongside the grouped one.
+
 5. Prompt once, covering both the code and the replies:
    - **PR mode, tests passed:** _"Tests passed. Check the diff, and review/edit the draft replies in `/tmp/review-replies.md` (set `skip: true` to skip posting one). Reply 'approved' when happy with both, or describe any issues."_
    - **PR mode, no test command detected:** _"No test command detected. Please run your tests and check the diff, and review/edit the draft replies in `/tmp/review-replies.md`. Reply 'approved' when happy with both, or describe any issues."_
@@ -146,7 +194,8 @@ reply: |
    - **Local mode, no test command detected:** _"No test command detected. Please run your tests and check the diff. Reply 'approved' when happy, or describe any issues."_
 6. Only continue once the user has explicitly approved.
 7. **PR mode:** after approval, validate the reply file structure:
-   - Every entry must have a `## <n>. Comment #<id>` header, a `skip:` field (true/false), and a `reply:` block
+   - **Individual replies:** every entry must have a `## <n>. Comment #<id>` header, a `skip:` field (true/false), and a `reply:` block
+   - **Grouped reply:** there must be exactly one `## Grouped reply` entry with a `skip:` field and a `reply:` block, and every inline thread from the plan must appear under `## Resolve` with a `resolve:` field (true/false) and **no** `reply:` block
    - If any entry is malformed, report exactly which entry and what is wrong, and prompt: _"Fix the malformed entries and reply 'approved' again."_ Do not publish until the file is valid.
 
 ### 6. Record Outcomes
@@ -174,9 +223,14 @@ No separate step — replies were already drafted and approved in Step 5.
 #### PR mode
 
 1. `git push` to publish the commits
-2. Read back `/tmp/review-replies.md` and for each entry:
-   - `skip: true` → leave unresolved, do not post a reply
-   - otherwise → post the reply on GitHub against the original comment and mark it resolved
+2. Read back `/tmp/review-replies.md`:
+   - **Individual replies** — for each entry:
+     - `skip: true` → leave unresolved, do not post a reply
+     - otherwise → post the reply on GitHub against the original comment and mark it resolved
+   - **Grouped reply:**
+     - `## Grouped reply` with `skip: false` → post it once as a single PR-level comment (e.g. `gh pr comment`); `skip: true` → post nothing
+     - for each `## Resolve` entry with `resolve: true` → mark the review thread resolved **without posting a reply** (e.g. GraphQL `resolveReviewThread`); `resolve: false` → leave it open
+     - do not post the grouped comment until the push has succeeded, so the commit SHAs it references exist on the PR
 3. Delete `/tmp/review-replies.md`
 
 #### Local mode
@@ -187,7 +241,7 @@ No push, no GitHub interaction — the user decides when to push.
 
 #### PR mode
 
-- ✅ Actioned & replied: `<n>` comments
+- ✅ Actioned & replied: `<n>` comments (note whether replied individually or via a single grouped comment)
 - ⏭️ Skipped (left unresolved): `<n>` comments
 - ❌ Rejected: `<n>` comments
 
@@ -217,6 +271,7 @@ If any comments were rejected, list them:
 - Keep commits small and scoped to the item being addressed; stage only the files changed for each finding
 - Do not rewrite unrelated code while addressing review findings
 - If a fix introduces risk, flag it to the user before implementing
+- **PR mode:** when responding to more than 3 inline threads, never post per-thread replies — one grouped PR-level comment plus "resolved" status only, to minimise notification emails
 - `/tmp/review-replies.md` must never be staged or committed
 - **Local mode:** do not push — the user decides when to push
 - Never auto-resolve a comment flagged as "likely already addressed" — always confirm with the user first
