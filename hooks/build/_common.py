@@ -26,7 +26,11 @@ def _walk_bounded(root):
         if depth >= MAX_DEPTH:
             dirnames[:] = []
             continue
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".") or d == ".claude"]
+        # .plans/ holds local working plans; it may be a symlink to a sibling checkout's
+        # copy, which os.walk would list but not descend into, so walk it explicitly.
+        if ".plans" in dirnames and os.path.islink(os.path.join(dirpath, ".plans")):
+            yield from _walk_bounded(os.path.join(dirpath, ".plans"))
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".") or d in (".claude", ".plans")]
         if CACHE_FILENAME in filenames:
             yield os.path.join(dirpath, CACHE_FILENAME)
 
