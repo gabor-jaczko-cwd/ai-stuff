@@ -75,7 +75,11 @@ Determine whether subagents will operate against a disposable **read-only worktr
      - If a local branch named `<head-branch>` already exists, check for commits it has that `origin/<head-branch>` doesn't (`git log origin/<head-branch>..<head-branch>`). If any exist, **abort** and tell the user — never silently discard local work sitting on that branch name.
      - Otherwise: `git checkout -B <head-branch> origin/<head-branch>`. `-B` both creates the branch on a first-time review and force-resets it to match the fetched remote tip on every later one — so a force-push (rebase, amend) on the PR is always picked up cleanly instead of leaving the local branch stuck on stale or diverged history.
 3. Do **not** restore the previously-checked-out branch after the review finishes — leave the working directory on the reviewed branch, since the user explicitly opted into using it live.
-4. Subagents read directly from the working directory (no worktree exists in this mode). This is also the only mode where the coherence subagent may execute tests/tooling (Step 5).
+4. **Fix the session's PR binding (Claude desktop only).** The desktop app binds the PR of whichever branch was checked out when the session started, so the checkout in point 2 leaves the session bound to the *previous* branch's PR. Load the tools with `ToolSearch` (`select:mcp__ccd_pr__get_status,mcp__ccd_pr__unbind_pr,mcp__ccd_pr__bind_pr`); if they are not available (CLI, other client), skip this point silently. Otherwise call `get_status` and compare the bound PR's URL with the reviewed PR:
+   - **PR mode:** if a different PR is bound, `unbind_pr` it, then `bind_pr` the reviewed PR's URL. If the reviewed PR is already bound, do nothing.
+   - **Branch mode:** if a bound PR's head branch is not the reviewed branch, `unbind_pr` it. Bind nothing unless an open PR for the reviewed branch exists and the user asked for one.
+   - Never unbind a PR whose branch is the reviewed branch. A failed or declined bind/unbind never blocks the review; mention it in the report header.
+5. Subagents read directly from the working directory (no worktree exists in this mode). This is also the only mode where the coherence subagent may execute tests/tooling (Step 5).
 
 **Otherwise (default):**
 1. Resolve the source ref to a commit SHA (`git rev-parse <branch>`, or the PR head SHA)
