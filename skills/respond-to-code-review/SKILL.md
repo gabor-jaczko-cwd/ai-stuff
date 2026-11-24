@@ -31,9 +31,34 @@ On startup, detect which mode to use:
 ### 1. Load Review Source
 
 **PR mode:**
-- Find the open PR for this branch on GitHub
-- Retrieve all unresolved review comments
-- For each comment, also fetch the full reply thread — collapse to the last 3 messages if the thread is long, but always include the original comment and the most recent reply
+- Find the open PR for this branch on GitHub and note its author (`<pr-author>`)
+- Collect findings from **every** review on the PR, not only the latest one. Fetch reviews, inline threads and PR-level comments in one GraphQL call (paginate any connection whose `pageInfo.hasNextPage` is true):
+
+  ```bash
+  gh api graphql -F owner=<owner> -F repo=<repo> -F pr=<number> -f query='
+    query($owner:String!,$repo:String!,$pr:Int!){
+      repository(owner:$owner,name:$repo){
+        pullRequest(number:$pr){
+          author{login}
+          reviews(first:100){ pageInfo{hasNextPage endCursor}
+            nodes{ databaseId author{login} state body submittedAt commit{oid} url } }
+          reviewThreads(first:100){ pageInfo{hasNextPage endCursor}
+            nodes{ id isResolved isOutdated path line
+              comments(first:50){ nodes{ databaseId author{login} body createdAt url
+                originalCommit{oid} pullRequestReview{databaseId} } } } }
+          comments(first:100){ pageInfo{hasNextPage endCursor}
+            nodes{ databaseId author{login} body createdAt url } }
+        }}}'
+  ```
+
+- Build the candidate list from two sources:
+  1. **Unresolved inline threads** — every thread with `isResolved: false`, whichever review it came from. Keep the thread context: collapse to the last 3 messages if long, but always include the original comment and the most recent reply. Keep outdated threads (`isOutdated: true`) and mark them — they feed the "likely already addressed" check in Step 2.
+  2. **Unanswered review bodies** — every review with a non-empty `body`, by someone other than `<pr-author>`, that is *unanswered* (see below). Skip bodies with nothing actionable ("LGTM", "see inline comments", a bare approval) — they need no reply.
+
+  A review body is **unanswered** unless, after it was submitted, `<pr-author>` either posted a PR-level comment that @-mentions the reviewer, or replied in one of that review's inline threads. (PR-level comments are fetched only for this check.)
+- Ordinary PR conversation comments (not part of a review) are **not** a source — this skill never responds to them.
+- **Deduplicate** the candidates before triage. When two candidates raise the same concern — a review body restating one of its inline comments, the same point repeated in a later review round, two reviewers flagging the same problem — merge them into one item that lists every source (comment/review ID and reviewer). Merge on the *concern*, not merely the same file or line; when unsure, keep them separate and note the possible overlap in the plan.
+- If nothing is left, report _"No unresolved threads or unanswered reviews on this PR."_ and exit.
 
 **Local mode:**
 - Read `./tmp/review-branch-<name>.md`
@@ -50,7 +75,7 @@ For each open item:
 - **Categorise**: bug fix / style / design / question / nit
 - **Prioritise**: blocker > major > minor > nit
 - **Validate**: determine if the concern is legitimate given the codebase context
-- **Pre-triage git check (PR mode):** check whether the file/line referenced by the comment has been modified in commits made *after* the review was posted (`git log --oneline <review-commit>..HEAD -- <file>`). If so, flag the comment as "⚠️ likely already addressed (commit <sha>)" in the plan — do **not** auto-resolve; confirm with the user during Step 3 before treating it as open work.
+- **Pre-triage git check (PR mode):** check whether the file/line referenced by the comment has been modified in commits made *after* the review was posted (`git log --oneline <review-commit>..HEAD -- <file>`, where `<review-commit>` is the commit *that item's* review was made against — reviews from different rounds have different commits; for a merged item use the oldest source). If so, flag the comment as "⚠️ likely already addressed (commit <sha>)" in the plan — do **not** auto-resolve; confirm with the user during Step 3 before treating it as open work.
 
 If an item is ambiguous, note the question inline in the plan (Step 3) — one targeted question per item. Do not use the `grill-me` skill.
 
@@ -58,13 +83,15 @@ If an item is ambiguous, note the question inline in the plan (Step 3) — one t
 
 Produce a prioritised action list. For any ambiguous items, include the clarifying question inline under that item and wait for the user to answer before finalising the plan. For any items flagged as "likely already addressed," ask the user to confirm whether they are resolved.
 
-**PR mode** — reference GitHub comment IDs, reviewers, and thread context:
+**PR mode** — reference GitHub comment/review IDs, reviewers, and thread context. Label each source by kind (`Comment #<id>` for an inline thread, `Review #<id>` for a review body); a merged item lists all its sources:
 ```
 ## Review Response Plan
 
 ### Blockers
 - [ ] Comment #<id> (@<reviewer>): <summary> → <proposed fix>
   > Thread: <last message in thread, if any>
+- [ ] Comment #<id> (@<reviewer>) + Review #<id> (@<reviewer>, body): <summary> → <proposed fix>
+  > Merged: same concern raised inline and in the review summary
 
 ### Major
 - [ ] Comment #<id> (@<reviewer>): <summary> → <proposed fix>
@@ -113,9 +140,14 @@ To keep reviewers' inboxes quiet, the reply style depends on how many **inline r
 | 3 or fewer | **Individual replies** — one reply per thread, then resolve it |
 | More than 3 | **Single grouped reply** — one PR-level comment covering every thread; the inline threads get **no reply of their own**, only a "resolved" status |
 
-- Count only inline threads. General PR conversation comments (not attached to a line) are never grouped — reply to those individually.
+- Count only inline threads.
+- Replies are always posted as ordinary comments: a thread reply on an inline thread, or a PR-level comment otherwise.
+- Review bodies have no thread to reply in, so they are answered with a PR-level comment that @-mentions the reviewer and links the review. In grouped style, fold them into the grouped reply instead of posting a separate comment.
+- A merged item is answered once: on its inline thread (individual style) or as one bullet in the grouped reply. That answer covers all its other sources too — do not reply to them separately.
 - Do not count items the user chose to skip or that are still awaiting a clarification.
 - The grouped reply is one PR-level comment (not a thread reply), so it sends one notification instead of one per thread.
+
+The plan also lists **reviewers to re-request** after publishing (Step 7): every human reviewer, other than `<pr-author>`, with at least one item in this plan that is actioned or declined. Reviewers whose items were all skipped are left out. Never re-request bots (`[bot]` logins, Copilot, etc.) — re-review by bots is left to the repo settings/CI.
 
 Present the plan to the user and wait for approval (and answers to any clarifications) before implementing.
 
@@ -152,7 +184,25 @@ reply: |
   <proposed reply text here>
 
 ---
+
+## 2. Review #<id> (@<reviewer>)
+
+> <review body quoted here>
+
+skip: false
+
+reply: |
+  @<reviewer> re: your review (<review url>) — <proposed reply text here>
+
+---
+
+## Re-request review
+<!-- Remove a login to not re-request them. Leave empty to re-request nobody. -->
+
+reviewers: <login1>, <login2>
 ```
+
+A merged item gets one entry, headed by its inline thread if it has one (otherwise by its first source), with an `also: Review #<id>, Comment #<id>` line under the header.
 
 **Single grouped reply** (more than 3 inline threads) — one `## Grouped reply` entry that carries the reply text, plus one `resolve` entry per thread. The threads receive no reply; they are only resolved:
 
@@ -183,19 +233,24 @@ reply: |
 resolve: true
 
 ---
+
+## Re-request review
+<!-- Remove a login to not re-request them. Leave empty to re-request nobody. -->
+
+reviewers: <login1>, <login2>
 ```
 
-If the inline threads come from several reviewers, still post one grouped reply and mention each reviewer once. General PR conversation comments in the same review are not part of the group — give them individual entries in the first format alongside the grouped one.
-
+If the inline threads come from several reviewers, still post one grouped reply and mention each reviewer once. Review-body items go into the grouped reply as bullets (`- Review #<id> — <fixed | declined: reason>`).
 5. Prompt once, covering both the code and the replies:
-   - **PR mode, tests passed:** _"Tests passed. Check the diff, and review/edit the draft replies in `/tmp/review-replies.md` (set `skip: true` to skip posting one). Reply 'approved' when happy with both, or describe any issues."_
-   - **PR mode, no test command detected:** _"No test command detected. Please run your tests and check the diff, and review/edit the draft replies in `/tmp/review-replies.md`. Reply 'approved' when happy with both, or describe any issues."_
+   - **PR mode, tests passed:** _"Tests passed. Check the diff, and review/edit the draft replies and the reviewers to re-request in `/tmp/review-replies.md` (set `skip: true` to skip posting one). Reply 'approved' when happy with both, or describe any issues."_
+   - **PR mode, no test command detected:** _"No test command detected. Please run your tests and check the diff, and review/edit the draft replies and the reviewers to re-request in `/tmp/review-replies.md`. Reply 'approved' when happy with both, or describe any issues."_
    - **Local mode, tests passed:** _"Tests passed. Check the diff and reply 'approved' when happy, or describe any issues."_
    - **Local mode, no test command detected:** _"No test command detected. Please run your tests and check the diff. Reply 'approved' when happy, or describe any issues."_
 6. Only continue once the user has explicitly approved.
 7. **PR mode:** after approval, validate the reply file structure:
-   - **Individual replies:** every entry must have a `## <n>. Comment #<id>` header, a `skip:` field (true/false), and a `reply:` block
+   - **Individual replies:** every entry must have a `## <n>. Comment #<id>` or `## <n>. Review #<id>` header, a `skip:` field (true/false), and a `reply:` block
    - **Grouped reply:** there must be exactly one `## Grouped reply` entry with a `skip:` field and a `reply:` block, and every inline thread from the plan must appear under `## Resolve` with a `resolve:` field (true/false) and **no** `reply:` block
+   - **Both styles:** there must be exactly one `## Re-request review` section with a `reviewers:` field (a comma-separated list of logins, possibly empty)
    - If any entry is malformed, report exactly which entry and what is wrong, and prompt: _"Fix the malformed entries and reply 'approved' again."_ Do not publish until the file is valid.
 
 ### 6. Record Outcomes
@@ -226,12 +281,14 @@ No separate step — replies were already drafted and approved in Step 5.
 2. Read back `/tmp/review-replies.md`:
    - **Individual replies** — for each entry:
      - `skip: true` → leave unresolved, do not post a reply
-     - otherwise → post the reply on GitHub against the original comment and mark it resolved
+     - `Comment #<id>` (inline thread) → post the reply in that thread and mark it resolved
+     - `Review #<id>` → post the reply as a PR-level comment (e.g. `gh pr comment`); there is nothing to resolve
    - **Grouped reply:**
      - `## Grouped reply` with `skip: false` → post it once as a single PR-level comment (e.g. `gh pr comment`); `skip: true` → post nothing
      - for each `## Resolve` entry with `resolve: true` → mark the review thread resolved **without posting a reply** (e.g. GraphQL `resolveReviewThread`); `resolve: false` → leave it open
      - do not post the grouped comment until the push has succeeded, so the commit SHAs it references exist on the PR
-3. Delete `/tmp/review-replies.md`
+3. **Re-request review** from every login in `## Re-request review` — one call: `gh pr edit <number> --add-reviewer <login1>,<login2>`. Do this last, after the push and all replies have gone through, so the reviewer is notified only once there is something to look at. If `reviewers:` is empty, skip this step. If a reply or the push failed, do not re-request — report the failure instead.
+4. Delete `/tmp/review-replies.md`
 
 #### Local mode
 
@@ -241,9 +298,10 @@ No push, no GitHub interaction — the user decides when to push.
 
 #### PR mode
 
-- ✅ Actioned & replied: `<n>` comments (note whether replied individually or via a single grouped comment)
-- ⏭️ Skipped (left unresolved): `<n>` comments
-- ❌ Rejected: `<n>` comments
+- ✅ Actioned & replied: `<n>` items (note whether replied individually or via a single grouped comment; note how many sources were merged by deduplication)
+- ⏭️ Skipped (left unresolved): `<n>` items
+- ❌ Rejected: `<n>` items
+- 🔁 Review re-requested from: `@<login>, …` (or "nobody")
 
 If any comments were rejected, list them:
 
@@ -275,3 +333,6 @@ If any comments were rejected, list them:
 - `/tmp/review-replies.md` must never be staged or committed
 - **Local mode:** do not push — the user decides when to push
 - Never auto-resolve a comment flagged as "likely already addressed" — always confirm with the user first
+- **PR mode:** collect from all reviews, not just the latest; deduplicate before triage so each concern is answered exactly once
+- **PR mode:** never respond to ordinary PR conversation comments — only unresolved inline threads and unanswered review bodies
+- **PR mode:** re-request review only from the human logins in the approved reply file, and only after the push and all replies succeeded; never re-request bots
