@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Stop hook for the `build` skill.
+"""Stop hook for the `build` skill. Registered in the build SKILL.md frontmatter
+(root session, from skill invocation on) and in foreman's and inspector's
+frontmatter, where Claude Code runs it as SubagentStop.
 
 Blocks any layer (root, foreman, or inspector itself) from ending its turn
 if `.build-state.json` shows any step marked `done` with no commit SHA

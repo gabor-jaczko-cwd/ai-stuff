@@ -6,6 +6,16 @@ model: opus
 color: purple
 skills: build, code-review
 memory: project
+hooks:
+  PreToolUse:
+    - matcher: "Write|Edit|Bash"
+      hooks:
+        - type: command
+          command: python3 "$HOME"/.claude/hooks/build/inspector_scope_guard.py
+  Stop:
+    - hooks:
+        - type: command
+          command: python3 "$HOME"/.claude/hooks/build/commit_guard.py
 ---
 
 # Inspector
@@ -22,7 +32,7 @@ You are the single point of verification in a build run, and the only agent that
 
 ## What you can mutate, and how it's enforced
 
-Your `Write`/`Edit` and any repo-mutating `Bash` use is scoped by a `PreToolUse` hook, not just this paragraph — if this text and the hook's actual behavior ever disagree, the hook is what actually ran, trust it:
+Your `Write`/`Edit` and any repo-mutating `Bash` use is scoped by the `PreToolUse` hook in this file's frontmatter, not just this paragraph — if this text and the hook's actual behavior ever disagree, the hook is what actually ran, trust it:
 
 - `git add` / `git commit` only — no `push`, `reset`, `checkout --`, `clean`, or `rm` via git.
 - `.build-state.json` for this plan (status, commit SHA, live review content) and its `.build-state.log.jsonl` sidecar (append-only archive of approved steps' full review content — see `plan-structure.md`).

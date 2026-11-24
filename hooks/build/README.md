@@ -2,64 +2,29 @@
 
 Backstops for the `build` skill's sign-off gates and scoping rules (see `skills/build/references/loop-protocol.md` and `skills/build/agents/*.md` in this repo). All five are gated on finding a `.build-state.json` cache file anywhere under the current project — with no active `build` plan, they're silent no-ops.
 
-- `commit_guard.py` — **Stop** hook. Blocks ending the turn if any step is `done` with no commit SHA recorded.
-- `review_commit_reminder.py` — **PostToolUse** hook (matcher `Task`). Sanity-checks, right after an `inspector` dispatch that looked like APPROVE, that the commit actually landed in `.build-state.json`.
-- `precompact_check.py` — **PreCompact** hook. Reminds whoever is driving the session to sync the tracker/cache before context is lost.
-- `foreman_scope_guard.py` — **PreToolUse** hook (matcher `Read|Write`). Blocks `foreman`'s Read/Write outside exactly `PLAN.md` and `.build-state.json` for the active plan — the mechanical enforcement behind "foreman is pure orchestration."
-- `inspector_scope_guard.py` — **PreToolUse** hook (matcher `Write|Edit|Bash`). Blocks `inspector`'s Write/Edit/Bash outside its allowlist (git add/commit, `.build-state.json` and its `.build-state.log.jsonl` sidecar, its own agent-memory, the scratchpad, and this project's declared `scratch_paths`) — the mechanical enforcement behind "inspector never touches real code directly." Best-effort static pattern-matching, not a full sandbox.
+None of them is registered in `~/.claude/settings.json`. Each one is declared in the `hooks:` frontmatter of the skill or agent that needs it. Claude Code only runs it while that skill or agent is active, so it doesn't start a `python3` process on every tool call in every project:
 
-The last two rely on the hook payload's `agent_type` field, which the harness only populates inside a subagent call — see the `hooks` doc's "common input fields." They're no-ops for any tool call that isn't actually running as `foreman`/`inspector`.
+- `commit_guard.py` is a **Stop** hook, declared in `skills/build/SKILL.md` (root session) and in `agents/foreman.md` and `agents/inspector.md` (where Claude Code runs it as **SubagentStop**). It blocks ending the turn if any step is `done` with no commit SHA recorded.
+- `precompact_check.py` is a **PreCompact** hook, declared in `skills/build/SKILL.md`. It reminds whoever is driving the session to sync the tracker/cache before context is lost.
+- `review_commit_reminder.py` is a **PostToolUse** hook (matcher `Agent|Task`; `Task` is the pre-2.1.63 name of the subagent tool), declared in `agents/foreman.md`, since foreman is the one that dispatches inspector. Right after an `inspector` dispatch that looked like APPROVE, it checks that the commit actually landed in `.build-state.json`.
+- `foreman_scope_guard.py` is a **PreToolUse** hook (matcher `Read|Write`), declared in `agents/foreman.md`. It blocks `foreman`'s Read/Write outside exactly `PLAN.md` and `.build-state.json` for the active plan. This is the mechanical enforcement behind "foreman is pure orchestration."
+- `inspector_scope_guard.py` is a **PreToolUse** hook (matcher `Write|Edit|Bash`), declared in `agents/inspector.md`. It blocks `inspector`'s Write/Edit/Bash outside its allowlist: git add/commit, `.build-state.json` and its `.build-state.log.jsonl` sidecar, its own agent-memory, the scratchpad, and this project's declared `scratch_paths`. This is the mechanical enforcement behind "inspector never touches real code directly." It's best-effort static pattern-matching, not a full sandbox.
+
+Lifetimes, per the Claude Code hooks reference ("Hooks in skills and agents"):
+
+- Agent frontmatter hooks run only while that subagent is running. User-level agents in `~/.claude/agents/` don't need the workspace trust prompt for them.
+- Skill frontmatter hooks register when the skill is invoked and stay for the rest of the session. `/clear` and `/resume` drop them. After either one mid-build, invoke `/build` again before the root session continues the plan.
+
+The two scope guards still check the payload's `agent_type` field. That's redundant with the frontmatter scoping, but it's cheap and keeps them safe if they're ever registered more broadly again.
 
 ## Install
 
-Symlink this directory into `~/.claude/hooks/build`:
+Nothing to merge into `settings.json`. `run_after_40-link-claude-agents.sh` creates the symlinks the frontmatter commands rely on:
 
-```bash
-mkdir -p ~/.claude/hooks
-ln -s ../../.agents/hooks/build ~/.claude/hooks/build
-```
+- `~/.claude/hooks/build` → `~/.agents/hooks/build` (the commands call `python3 "$HOME"/.claude/hooks/build/<script>.py`)
+- `~/.claude/agents/{foreman,crewman,inspector}.md` → `~/.agents/skills/build/agents/`
+- `~/.claude/skills/build` → `~/.agents/skills/build`
 
-Then merge the following into the top-level `"hooks"` key of `~/.claude/settings.json` (merge the arrays — don't overwrite any existing hooks for the same event, e.g. an existing `PreToolUse` entry):
+To check they're live, run `/hooks` in a session after invoking `/build`. The root hooks are listed with the skill as their source. The agent hooks show up only while foreman or inspector is running.
 
-```json
-{
-  "PreToolUse": [
-    {
-      "matcher": "Read|Write",
-      "hooks": [
-        { "type": "command", "command": "python3 ~/.claude/hooks/build/foreman_scope_guard.py" }
-      ]
-    },
-    {
-      "matcher": "Write|Edit|Bash",
-      "hooks": [
-        { "type": "command", "command": "python3 ~/.claude/hooks/build/inspector_scope_guard.py" }
-      ]
-    }
-  ],
-  "PostToolUse": [
-    {
-      "matcher": "Task",
-      "hooks": [
-        { "type": "command", "command": "python3 ~/.claude/hooks/build/review_commit_reminder.py" }
-      ]
-    }
-  ],
-  "Stop": [
-    {
-      "hooks": [
-        { "type": "command", "command": "python3 ~/.claude/hooks/build/commit_guard.py" }
-      ]
-    }
-  ],
-  "PreCompact": [
-    {
-      "hooks": [
-        { "type": "command", "command": "python3 ~/.claude/hooks/build/precompact_check.py" }
-      ]
-    }
-  ]
-}
-```
-
-`settings.json` itself is not tracked in this repo (it mixes this machine's unrelated personal config with the hook wiring) — only this fragment is, so it can be merged in by hand or by a setup script on any machine that wants the `build` skill.
+If an older setup still has these five scripts registered in `~/.claude/settings.json`, remove those entries; otherwise each hook runs twice inside a build.

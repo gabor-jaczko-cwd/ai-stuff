@@ -9,9 +9,10 @@ the tools list alone. This hook is that scoping: it blocks any foreman
 Read/Write call whose target isn't exactly this plan's PLAN.md or
 .build-state.json.
 
-Fires for every subagent's Read/Write calls (the matcher can't filter by
-agent), but is a no-op unless agent_type == "foreman" or there's no active
-build plan in this project -- inert everywhere else.
+Registered in foreman's own frontmatter (agents/foreman.md), so Claude Code
+only runs it while a foreman subagent is running. It still checks
+agent_type == "foreman" and the presence of an active build plan, and is a
+no-op otherwise.
 """
 import os
 import sys

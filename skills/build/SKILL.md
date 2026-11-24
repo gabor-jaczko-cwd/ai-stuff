@@ -2,6 +2,15 @@
 name: build
 description: Drive a large, multi-phase feature to completion with an unattended (or lightly attended) agent loop — a persistent root session spawns foreman fresh at each reset point, foreman coordinates, crewman is the only one that writes code, inspector verifies and commits every step. Reserved for work too big or too long-running to hand-hold; everyday ticket work stays on wayfinder/to-spec/to-tickets/implement/code-review. Use when the user wants a feature built end to end across many steps without reviewing each one personally, or explicitly asks to "run build" / "build this plan".
 argument-hint: "A to-spec doc, a to-tickets breakdown, or nothing to plan from the current conversation"
+hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: python3 "$HOME"/.claude/hooks/build/commit_guard.py
+  PreCompact:
+    - hooks:
+        - type: command
+          command: python3 "$HOME"/.claude/hooks/build/precompact_check.py
 ---
 
 # Build
@@ -75,13 +84,23 @@ At each reset point, foreman ends its turn and reports to the root rather than a
 
 When every phase is done, foreman dispatches inspector to run one final `/code-review` over the whole commit range before declaring the plan complete.
 
-Hooks that backstop the parts prose alone can't guarantee, gated on the local cache file's presence so they're inert on every other project:
+Hooks back up the parts that prose alone can't guarantee. The scripts live in `~/.claude/hooks/build/` (source: `dot_agents/hooks/build/`). None of them is registered in `settings.json`. Each one is declared in the frontmatter of whatever needs it, so Claude Code only starts it while that skill or agent is active. Each script also exits quietly unless it finds a `.build-state.json`.
 
-- `build-commit-guard.py` (Stop) — blocks a turn from ending if the cache shows any step `done` with no commit recorded. Should never trigger under normal operation now that inspector commits atomically with its own APPROVE, but stays as the deterministic backstop.
-- `build-review-commit-reminder.py` (PostToolUse:Task) — fires right after an `inspector` dispatch returns; a lighter check now that inspector syncs itself, retained as a sanity check.
-- `build-precompact-check.py` (PreCompact) — fires before any compaction while a plan is active, reminding whoever is driving the session that the tracker and cache must be current first.
-- `build-foreman-scope-guard.py` (PreToolUse) — blocks foreman's `Read`/`Write` calls to anything other than `PLAN.md` and `.build-state.json` for the active plan.
-- `build-inspector-scope-guard.py` (PreToolUse) — blocks inspector's `Write`/`Edit` and repo-mutating `Bash` outside its allowlist: `git add`/`git commit`, `.build-state.json`, its own `.claude/agent-memory/inspector/**`, the OS scratchpad, and any project-declared `scratch_paths`.
+| Script | Event | Declared in | Active while |
+| :- | :- | :- | :- |
+| `commit_guard.py` | Stop (SubagentStop in the agents) | this file, `agents/foreman.md`, `agents/inspector.md` | from `/build` invocation to the end of the session (root), and while foreman or inspector runs |
+| `precompact_check.py` | PreCompact | this file | from `/build` invocation to the end of the session |
+| `review_commit_reminder.py` | PostToolUse `Agent\|Task` | `agents/foreman.md` | foreman runs (it is the agent that dispatches inspector) |
+| `foreman_scope_guard.py` | PreToolUse `Read\|Write` | `agents/foreman.md` | foreman runs |
+| `inspector_scope_guard.py` | PreToolUse `Write\|Edit\|Bash` | `agents/inspector.md` | inspector runs |
+
+- `commit_guard.py` blocks a turn from ending if the cache shows any step `done` with no commit recorded. Should never trigger under normal operation now that inspector commits atomically with its own APPROVE, but stays as the deterministic backstop.
+- `review_commit_reminder.py` fires right after an `inspector` dispatch returns; a lighter check now that inspector syncs itself, retained as a sanity check.
+- `precompact_check.py` fires before any compaction while a plan is active, reminding whoever is driving the session that the tracker and cache must be current first.
+- `foreman_scope_guard.py` blocks foreman's `Read`/`Write` calls to anything other than `PLAN.md` and `.build-state.json` for the active plan.
+- `inspector_scope_guard.py` blocks inspector's `Write`/`Edit` and repo-mutating `Bash` outside its allowlist: `git add`/`git commit`, `.build-state.json`, its own `.claude/agent-memory/inspector/**`, the OS scratchpad, and any project-declared `scratch_paths`.
+
+Skill hooks register when the skill is invoked and are dropped by `/clear` and `/resume`. A root session that was resumed or cleared mid-build has to invoke `/build` again before it continues the plan, or it runs without the root Stop and PreCompact hooks. The agent hooks don't depend on this, because they load each time foreman or inspector is spawned.
 
 ## Agents
 
@@ -101,7 +120,7 @@ Guardrails:
 
 - Per-step cycle cap (default 3). Exceeding it escalates with the open feedback.
 - crewman is the only agent permitted to modify real source/test files. Only inspector commits, and only as part of its own APPROVE.
-- Never bypass or weaken an eval to force a step to "done". Never mark a step done without a recorded commit — the `build-commit-guard.py` hook enforces this.
+- Never bypass or weaken an eval to force a step to "done". Never mark a step done without a recorded commit — the `commit_guard.py` Stop hook enforces this.
 - Always honour the project profile's guardrails (a required format command, files that must never be touched) and, symmetrically, never grant `scratch_paths` beyond what the profile declares and validates against that project's own `.gitignore`.
 
 ## Output rules

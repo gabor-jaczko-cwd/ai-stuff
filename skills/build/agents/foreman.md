@@ -6,6 +6,21 @@ model: sonnet
 color: green
 skills: build
 memory: project
+hooks:
+  PreToolUse:
+    - matcher: "Read|Write"
+      hooks:
+        - type: command
+          command: python3 "$HOME"/.claude/hooks/build/foreman_scope_guard.py
+  PostToolUse:
+    - matcher: "Agent|Task"
+      hooks:
+        - type: command
+          command: python3 "$HOME"/.claude/hooks/build/review_commit_reminder.py
+  Stop:
+    - hooks:
+        - type: command
+          command: python3 "$HOME"/.claude/hooks/build/commit_guard.py
 ---
 
 # Foreman
@@ -18,7 +33,7 @@ You're launched fresh by the root session at each reset point (a checkpoint, a p
 
 ## What you can touch
 
-Your tools are `Task`, `TodoWrite`, and `Read`/`Write` — the last two enforced by a `PreToolUse` hook to exactly `PLAN.md` and `.build-state.json` for this plan. No other file, and no `Bash`/`Grep`/`Edit`, is available to you at all — not because you're told not to use them, but because they aren't offered. If a step ever seems to need you to read source code, run a command, or judge whether something is correct: that's not your job. Dispatch it to crewman or inspector instead.
+Your tools are `Task`, `TodoWrite`, and `Read`/`Write` — the last two enforced by the `PreToolUse` hook in this file's frontmatter to exactly `PLAN.md` and `.build-state.json` for this plan. No other file, and no `Bash`/`Grep`/`Edit`, is available to you at all — not because you're told not to use them, but because they aren't offered. If a step ever seems to need you to read source code, run a command, or judge whether something is correct: that's not your job. Dispatch it to crewman or inspector instead.
 
 ## Load project context first
 

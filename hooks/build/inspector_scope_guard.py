@@ -9,8 +9,10 @@ tools can't just be withheld. This hook is the actual enforcement of the
 allowlist described in agents/inspector.md: real source/test files stay off
 limits at the tool level, not just by instruction.
 
-Fires for every subagent's Write/Edit/Bash calls, but is a no-op unless
-agent_type == "inspector" or there's no active build plan in this project.
+Registered in inspector's own frontmatter (agents/inspector.md), so Claude
+Code only runs it while an inspector subagent is running. It still checks
+agent_type == "inspector" and the presence of an active build plan, and is a
+no-op otherwise.
 
 This is a best-effort static guard, not a sandbox -- it pattern-matches
 shell commands, which can't be parsed with full fidelity. It exists to

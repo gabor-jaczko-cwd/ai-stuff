@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""PostToolUse (matcher: Task) hook for the `build` skill.
+"""PostToolUse (matcher: Agent|Task) hook for the `build` skill, registered in
+foreman's frontmatter (agents/foreman.md) -- foreman is the one that dispatches inspector.
 
 inspector now commits and syncs .build-state.json itself, atomically with its
 own APPROVE -- there's no longer a separate foreman action to remind about.
@@ -51,7 +52,8 @@ def main():
         return 0  # no active build plan in this project -- inert
 
     payload = read_stdin_json()
-    if payload.get("tool_name") != "Task":
+    # The subagent tool was renamed Task -> Agent in Claude Code 2.1.63; accept both.
+    if payload.get("tool_name") not in ("Agent", "Task"):
         return 0
 
     tool_input = payload.get("tool_input", {})
