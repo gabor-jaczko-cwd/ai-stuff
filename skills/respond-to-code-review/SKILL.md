@@ -87,27 +87,41 @@ Produce a prioritised action list. For any ambiguous items, include the clarifyi
 ```
 ## Review Response Plan
 
+Reply style: <individual replies | single grouped reply>
+Tests: <test command | none found>
+Re-request review from: @<login1>, @<login2>
+
 ### Blockers
 - [ ] Comment #<id> (@<reviewer>): <summary> → <proposed fix>
   > Thread: <last message in thread, if any>
+  Reply: <full reply text — individual style>
 - [ ] Comment #<id> (@<reviewer>) + Review #<id> (@<reviewer>, body): <summary> → <proposed fix>
   > Merged: same concern raised inline and in the review summary
+  Reply: <full reply text>
 
 ### Major
 - [ ] Comment #<id> (@<reviewer>): <summary> → <proposed fix>
+  Reply: <full reply text>
 
 ### Minor / Nits
 - [ ] Comment #<id> (@<reviewer>): <summary> → <proposed fix>
+  Reply: <full reply text>
 
 ### Likely Already Addressed (confirm)
 - ⚠️ Comment #<id> (@<reviewer>): <summary> — modified in <sha>. Already resolved? [yes/no]
 
 ### Rejected (with reason)
 - Comment #<id>: <reason for not acting>
+  Reply: <full reply text explaining why>
 
 ### Clarifications Needed
 - Comment #<id>: <one targeted question>
+
+### Grouped reply   ← grouped style only; replaces the per-item Reply lines
+<full text of the grouped PR-level comment, exactly as it will be posted>
 ```
+
+Every `Reply:` (or the grouped reply) is the complete text that will be posted — never a summary or "see file".
 
 **Local mode** — reference finding row numbers and file/line:
 ```
@@ -129,7 +143,9 @@ Produce a prioritised action list. For any ambiguous items, include the clarifyi
 - Finding #<n>: <one targeted question>
 ```
 
-**PR mode:** include a draft reply message for each item — whether actioning it or declining it. State the **reply style** at the top of the plan (see "Reply style" below): _individual replies_ or _single grouped reply_.
+**PR mode:** draft a reply for each item — whether actioning it or declining it — and write them to the reply file (see "Reply file" below) before presenting the plan. **Show the full text of every reply in the plan itself**, directly under its item (and the whole grouped reply, in grouped style), plus the list of reviewers to re-request — the user must be able to review everything in the conversation without opening any file. State the **reply style** at the top of the plan (see "Reply style" below): _individual replies_ or _single grouped reply_.
+
+**Both modes:** state at the top of the plan which test command will be run after implementing (Step 5), or _"No test command found — changes will be committed (and, in PR mode, pushed) without running tests."_ Approving the plan accepts that.
 
 #### Reply style (PR mode)
 
@@ -149,24 +165,18 @@ To keep reviewers' inboxes quiet, the reply style depends on how many **inline r
 
 The plan also lists **reviewers to re-request** after publishing (Step 7): every human reviewer, other than `<pr-author>`, with at least one item in this plan that is actioned or declined. Reviewers whose items were all skipped are left out. Never re-request bots (`[bot]` logins, Copilot, etc.) — re-review by bots is left to the repo settings/CI.
 
-Present the plan to the user and wait for approval (and answers to any clarifications) before implementing.
+#### Reply file (PR mode)
 
-### 4. Implement
+Write the draft replies to `<reply-file>` = `<tmpdir>/review-replies-pr<number>.md`, where `<tmpdir>` is:
 
-Work through the plan top-down (blockers first):
+- the session's scratchpad directory, if the harness provides one (e.g. Claude Code's per-session scratchpad), otherwise
+- a fresh directory created for this run: `mktemp -d -t review-replies.XXXXXX`
 
-- Make code changes
-- Stage only the files modified for each finding: `git add <file1> <file2> && git commit -m "review: <summary>"`
-- Do **not** push or post anything yet
+Never use a fixed shared path (such as `/tmp/review-replies.md`) — several sessions may be responding to reviews at once.
 
-### 5. Test, Validate & Prepare Replies
+The reply file is the skill's working copy — the text that gets published in Step 7 — not something the user has to open. The user reviews the replies in the plan and asks for changes in the conversation; apply each change to the reply file and show the updated reply text again. (Mention the file's full absolute path once, for anyone who prefers to edit it directly.)
 
-Before prompting the user:
-
-1. Check the project guidelines (CLAUDE.md, Makefile, package.json, composer.json, etc.) for a test command
-2. If a test command is found, identify tests relevant to the changed files and run them — show the full output
-3. If tests fail, return to Step 4 to fix, re-commit, and re-run before asking the user
-4. **PR mode:** write a temporary reply file at `/tmp/review-replies.md`, using the reply style chosen in Step 3.
+Use the reply style chosen above.
 
 **Individual replies** (3 or fewer inline threads) — one entry per actioned or declined comment:
 
@@ -241,23 +251,58 @@ reviewers: <login1>, <login2>
 ```
 
 If the inline threads come from several reviewers, still post one grouped reply and mention each reviewer once. Review-body items go into the grouped reply as bullets (`- Review #<id> — <fixed | declined: reason>`).
-5. Prompt once, covering both the code and the replies:
-   - **PR mode, tests passed:** _"Tests passed. Check the diff, and review/edit the draft replies and the reviewers to re-request in `/tmp/review-replies.md` (set `skip: true` to skip posting one). Reply 'approved' when happy with both, or describe any issues."_
-   - **PR mode, no test command detected:** _"No test command detected. Please run your tests and check the diff, and review/edit the draft replies and the reviewers to re-request in `/tmp/review-replies.md`. Reply 'approved' when happy with both, or describe any issues."_
-   - **Local mode, tests passed:** _"Tests passed. Check the diff and reply 'approved' when happy, or describe any issues."_
-   - **Local mode, no test command detected:** _"No test command detected. Please run your tests and check the diff. Reply 'approved' when happy, or describe any issues."_
-6. Only continue once the user has explicitly approved.
-7. **PR mode:** after approval, validate the reply file structure:
-   - **Individual replies:** every entry must have a `## <n>. Comment #<id>` or `## <n>. Review #<id>` header, a `skip:` field (true/false), and a `reply:` block
-   - **Grouped reply:** there must be exactly one `## Grouped reply` entry with a `skip:` field and a `reply:` block, and every inline thread from the plan must appear under `## Resolve` with a `resolve:` field (true/false) and **no** `reply:` block
-   - **Both styles:** there must be exactly one `## Re-request review` section with a `reviewers:` field (a comma-separated list of logins, possibly empty)
-   - If any entry is malformed, report exactly which entry and what is wrong, and prompt: _"Fix the malformed entries and reply 'approved' again."_ Do not publish until the file is valid.
+
+Drafts may contain `<sha>` / `<sha-range>` placeholders for commits that do not exist yet. Filling them in with the real SHAs after Step 4 is the **only** change you may make to approved reply text without asking.
+
+#### Approval — the only gate
+
+Present the plan — in PR mode with every reply's full text inline — and prompt:
+
+- **PR mode:** _"Review the plan above, including the full reply texts and the reviewers to re-request. Tell me any changes (reword a reply, skip one, drop a reviewer), or reply 'approved' to implement, test, push and post without further confirmation — I'll stop and come back to you only if something goes wrong."_
+- **Local mode:** _"Review the plan above. Reply 'approved' to implement, test and update the save file without further confirmation — I'll stop and come back to you only if something goes wrong."_
+
+Get answers to any clarifications and "likely already addressed" confirmations first, and update the plan and reply file with them before asking for approval.
+
+**PR mode:** after approval, re-read and validate the reply file — it must match the reply texts last shown to the user (they may also have edited it directly; if so, show the changed replies before going on):
+- **Individual replies:** every entry must have a `## <n>. Comment #<id>` or `## <n>. Review #<id>` header, a `skip:` field (true/false), and a `reply:` block
+- **Grouped reply:** there must be exactly one `## Grouped reply` entry with a `skip:` field and a `reply:` block, and every inline thread from the plan must appear under `## Resolve` with a `resolve:` field (true/false) and **no** `reply:` block
+- **Both styles:** there must be exactly one `## Re-request review` section with a `reviewers:` field (a comma-separated list of logins, possibly empty)
+- If an entry is malformed, fix the structure yourself without changing the reply text. If it cannot be fixed without guessing (e.g. after a direct edit by the user), show the affected entry, say what is wrong, and ask. Do not start implementing until the file is valid.
+
+Approval covers everything up to the Summary: the commits, the push, posting the replies as they stand in the file, resolving threads and re-requesting review. Do not ask again unless a stop condition (Step 5) is hit.
+
+### 4. Implement
+
+Work through the plan top-down (blockers first):
+
+- Make code changes
+- Stage only the files modified for each finding: `git add <file1> <file2> && git commit -m "review: <summary>"`
+- Do **not** push or post anything yet
+
+### 5. Test & Check Against the Plan
+
+1. Check the project guidelines (CLAUDE.md, Makefile, package.json, composer.json, etc.) for the test command named in the plan
+2. Identify tests relevant to the changed files and run them — show the full output
+3. If tests fail and the fix stays within the planned change for that item, fix, re-commit and re-run
+4. **PR mode:** fill the SHA placeholders in the reply file
+
+**Stop conditions.** Stop — do not push, post or update the save file — and report back to the user if anything does not go according to the plan:
+
+- tests still fail, or fixing them needs changes outside the plan
+- a command fails unexpectedly (build, git, `gh`, …)
+- an assumption in the plan turns out wrong: the code is not as described, a fix needs a different approach or touches files the plan did not mention, or an item turns out invalid or already fixed
+- what was implemented no longer matches what an approved reply says
+- the branch has diverged from its remote, so the push would need a pull, rebase or force
+
+When stopping, say what went wrong, what is committed locally, and that nothing has been pushed or posted; propose the change to the plan and/or replies, and wait for a new approval before continuing.
+
+If nothing went wrong, continue straight to Step 6 — no second approval.
 
 ### 6. Record Outcomes
 
 #### PR mode
 
-No separate step — replies were already drafted and approved in Step 5.
+No separate step — the replies were approved with the plan and are posted in Step 7.
 
 #### Local mode — update save file
 
@@ -277,8 +322,10 @@ No separate step — replies were already drafted and approved in Step 5.
 
 #### PR mode
 
-1. `git push` to publish the commits
-2. Read back `/tmp/review-replies.md`:
+Run this without asking — it was approved with the plan. If any step fails, stop at once and report what has and has not been published (pushed? which replies posted? which threads resolved?); do not retry blindly and do not continue to later steps.
+
+1. `git push` to publish the commits. If it is rejected (e.g. non-fast-forward), stop — never pull, rebase or force-push without asking
+2. Read back `<reply-file>`:
    - **Individual replies** — for each entry:
      - `skip: true` → leave unresolved, do not post a reply
      - `Comment #<id>` (inline thread) → post the reply in that thread and mark it resolved
@@ -288,7 +335,7 @@ No separate step — replies were already drafted and approved in Step 5.
      - for each `## Resolve` entry with `resolve: true` → mark the review thread resolved **without posting a reply** (e.g. GraphQL `resolveReviewThread`); `resolve: false` → leave it open
      - do not post the grouped comment until the push has succeeded, so the commit SHAs it references exist on the PR
 3. **Re-request review** from every login in `## Re-request review` — one call: `gh pr edit <number> --add-reviewer <login1>,<login2>`. Do this last, after the push and all replies have gone through, so the reviewer is notified only once there is something to look at. If `reviewers:` is empty, skip this step. If a reply or the push failed, do not re-request — report the failure instead.
-4. Delete `/tmp/review-replies.md`
+4. Delete `<reply-file>` (and the `mktemp` directory, if one was created) — only once everything above succeeded; after a failure, keep it so the remaining replies can be posted from it
 
 #### Local mode
 
@@ -323,14 +370,15 @@ If any comments were rejected, list them:
 
 ## Rules
 
-- Never push commits until the user has passed the Test, Validate & Prepare Replies gate (Step 5)
-- **PR mode:** never post replies until the user has approved the reply file (Step 5) and it has passed validation
+- There is exactly one approval: the plan (with, in PR mode, the reply file) in Step 3. Never start implementing before it, and never ask for a second one when everything went according to the plan
+- Stop and report on any stop condition (Step 5) or publish failure (Step 7); a changed plan or reply needs a new approval
+- **PR mode:** never post replies that have not been approved, or that no longer match what was implemented; the reply file must pass validation first
 - Never mark an item resolved without either implementing a fix or a documented rejection reason
 - Keep commits small and scoped to the item being addressed; stage only the files changed for each finding
 - Do not rewrite unrelated code while addressing review findings
 - If a fix introduces risk, flag it to the user before implementing
 - **PR mode:** when responding to more than 3 inline threads, never post per-thread replies — one grouped PR-level comment plus "resolved" status only, to minimise notification emails
-- `/tmp/review-replies.md` must never be staged or committed
+- The reply file lives in the session's scratchpad (or a per-run `mktemp -d` directory), never a fixed shared path, and must never be staged or committed
 - **Local mode:** do not push — the user decides when to push
 - Never auto-resolve a comment flagged as "likely already addressed" — always confirm with the user first
 - **PR mode:** collect from all reviews, not just the latest; deduplicate before triage so each concern is answered exactly once
