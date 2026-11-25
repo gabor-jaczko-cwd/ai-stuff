@@ -33,7 +33,7 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 **PR mode — incremental detection (do this before fetching anything else):**
 1. Check for a local save file (`./tmp/review-pr-<number>.md`) — incremental if found
 2. If no save file: check GitHub for a prior review submitted by this agent on the PR — incremental if found
-3. **If incremental:** fetch all inline review comments from the previous review and record their `comment_id` → finding mapping (file + line + excerpt), so resolved findings can be replied to later
+3. **If incremental:** fetch the review threads on the PR (GraphQL `pullRequest.reviewThreads` → `id`, `isResolved`, `path`, `line`, first comment's `databaseId` and body) and record, for each inline comment from the previous review, its `comment_id` → finding mapping (file + line + excerpt) plus the thread's node `id` and `isResolved`, so threads of resolved findings can be marked resolved later
 
 ### 2. Gather Context
 
@@ -203,8 +203,8 @@ In PR incremental mode, label each finding as **[NEW]**, **[PREVIOUSLY RAISED]**
 5. **Post the review:**
    - **If verdict is REQUEST_CHANGES or COMMENT and there are inline findings** (file path + line number): create a pending review, post each as an inline comment for **[NEW] findings only** — never post a new inline comment for `[PREVIOUSLY RAISED]` findings, as their thread already exists on the PR. Then submit with the final comment body and verdict.
    - **Otherwise:** submit directly with the final comment body and verdict
-   - **Incremental mode — resolve addressed threads:** for each `[RESOLVED]` finding with a recorded `comment_id`, post a reply `"✅ Addressed."` to that thread
-   - Show a completion summary: inline comments posted (if any), findings in final comment, resolved threads replied to. List any failures.
+   - **Incremental mode — resolve addressed threads:** for each `[RESOLVED]` finding with a recorded thread, mark the thread resolved (GraphQL `resolveReviewThread` with the thread node `id`) **without posting a reply** — a reply per thread spams the author with notifications, and the review body already lists these under "✅ Resolved since last review". Re-check `isResolved` just before resolving and skip threads the author already resolved.
+   - Show a completion summary: inline comments posted (if any), findings in final comment, threads resolved (and how many were already resolved by the author). List any failures.
 
 **Branch mode** — no post-review actions. Report is chat-only.
 
@@ -283,7 +283,7 @@ The result is always: **frontmatter → latest completed review → `---` → `<
   - Never post to GitHub without the user explicitly choosing "Post to GitHub" in step 8
   - If CI checks are failing, verdict is forced to `REQUEST CHANGES` (GitHub Actions only — see [REFERENCE.md](REFERENCE.md))
   - In incremental mode, do not re-raise findings already marked resolved
-  - In incremental mode, actively check whether previously raised findings have been fixed; label them `[RESOLVED]` and reply to their inline comment threads after posting
+  - In incremental mode, actively check whether previously raised findings have been fixed; label them `[RESOLVED]` and, after posting, mark their threads resolved (unless already resolved) — never reply to them
 - **Branch mode only:**
   - Use only local `git` commands — no GitHub API calls
   - Run `git fetch` before resolving remote branches
