@@ -145,7 +145,7 @@ Every `Reply:` (or the grouped reply) is the complete text that will be posted �
 
 **PR mode:** draft a reply for each item — whether actioning it or declining it — and write them to the reply file (see "Reply file" below) before presenting the plan. **Show the full text of every reply in the plan itself**, directly under its item (and the whole grouped reply, in grouped style), plus the list of reviewers to re-request — the user must be able to review everything in the conversation without opening any file. State the **reply style** at the top of the plan (see "Reply style" below): _individual replies_ or _single grouped reply_.
 
-**Both modes:** state at the top of the plan which test command will be run after implementing (Step 5), or _"No test command found — changes will be committed (and, in PR mode, pushed) without running tests."_ Approving the plan accepts that.
+**Both modes:** find the test command in the project guidelines (CLAUDE.md, Makefile, package.json, composer.json, etc.) and state at the top of the plan which test command will be run for each fix (Step 4), or _"No test command found — changes will be committed (and, in PR mode, pushed) without running tests."_ Approving the plan accepts that.
 
 #### Reply style (PR mode)
 
@@ -273,25 +273,45 @@ Approval covers everything up to the Summary: the commits, the push, posting the
 
 ### 4. Implement
 
-Work through the plan top-down (blockers first):
+Hand the work to subagents, one item at a time. You (the main session) only coordinate. You do not edit code yourself, and you pass each subagent everything it needs in its prompt, because it has no access to this conversation.
 
-- Make code changes
-- Stage only the files modified for each finding: `git add <file1> <file2> && git commit -m "review: <summary>"`
-- Do **not** push or post anything yet
+Before the first item, run `git status`. If a file the plan touches already has uncommitted changes, stop and ask. Otherwise the reviewer's diff and commit would mix those changes in.
 
-### 5. Test & Check Against the Plan
+Work through the plan's actioned items top-down (blockers first), **sequentially**. Every item shares the working tree, so never run two items at once. For each item:
 
-1. Check the project guidelines (CLAUDE.md, Makefile, package.json, composer.json, etc.) for the test command named in the plan
-2. Identify tests relevant to the changed files and run them — show the full output
-3. If tests fail and the fix stays within the planned change for that item, fix, re-commit and re-run
-4. **PR mode:** fill the SHA placeholders in the reply file
+1. **Implement.** Spawn a fresh `general-purpose` subagent with:
+   - the item: its source(s), the reviewer's comment and thread context, the proposed fix, and (PR mode) the approved reply text
+   - the files and code it concerns, and the project's conventions (from CLAUDE.md etc.)
+   - the test command from the plan
+
+   Brief it to implement **only this item**, add or update tests where the fix changes behaviour, and run the tests relevant to the changed files. This is the only place tests are run. Items are done one after another on the same working tree, so each run also covers the fixes already committed. It must **not** stage, commit or push anything. If the code is not as the plan describes, the fix needs a different approach or other files, or the tests can't be made to pass within this item, it stops and reports instead of improvising. It reports back: changed files, the exact test command, its result (pass/fail counts, and the output of any failure), and any deviations from the proposed fix.
+
+2. **Review and commit.** Spawn a *separate*, fresh `general-purpose` subagent. Never reuse the implementer: the point is a second opinion. Give it the same item details (proposed fix, approved reply text), the implementer's report, and the test command. Brief it to:
+   - read the diff (`git diff`) and check that it does what the proposed fix says, and (PR mode) everything the approved reply claims; that it stays in scope (nothing unrelated changed, no files outside the item); and that it is correct and follows the repo's conventions
+   - check the implementer's reported test run instead of running the tests again: the command is the plan's test command, it covers the changed files, and it passed. If no tests were run, they failed, or they don't cover the change, request changes. When the plan says no test command was found, skip this check
+   - on **APPROVE**: stage only this item's files and commit, `git add <file1> <file2> && git commit -m "review: <summary>"`, then report the commit SHA. Never push
+   - on **CHANGES_REQUESTED**: commit nothing and return a numbered, file-specific list of what is wrong
+
+3. **On changes requested**, spawn a new implementer with the item details plus the reviewer's numbered feedback, then a new reviewer, as above. After **2** rounds of changes requested on the same item, treat it as a stop condition (Step 5).
+
+Record each item's commit SHA as it lands. Do **not** push or post anything yet.
+
+> **Larger plans:** the user can ask for the approved plan to be handed to the `build` skill (its foreman/crewman/inspector loop) instead. Do this only when asked, as it is much heavier. Publishing (Step 7) still happens here once it is done.
+
+### 5. Check Against the Plan
+
+Tests were run once per item in Step 4. Do not run them again here.
+
+1. Show the user each item's commit SHA, test command and test result, as reported in Step 4
+2. **PR mode:** fill the SHA placeholders in the reply file
 
 **Stop conditions.** Stop — do not push, post or update the save file — and report back to the user if anything does not go according to the plan:
 
 - tests still fail, or fixing them needs changes outside the plan
 - a command fails unexpectedly (build, git, `gh`, …)
-- an assumption in the plan turns out wrong: the code is not as described, a fix needs a different approach or touches files the plan did not mention, or an item turns out invalid or already fixed
+- an assumption in the plan turns out wrong: the code is not as described, a fix needs a different approach or touches files the plan did not mention, or an item turns out invalid or already fixed (including when the implementer subagent stops and reports this)
 - what was implemented no longer matches what an approved reply says
+- the reviewer subagent still requests changes after 2 rounds on the same item
 - the branch has diverged from its remote, so the push would need a pull, rebase or force
 
 When stopping, say what went wrong, what is committed locally, and that nothing has been pushed or posted; propose the change to the plan and/or replies, and wait for a new approval before continuing.
@@ -374,7 +394,8 @@ If any comments were rejected, list them:
 - Stop and report on any stop condition (Step 5) or publish failure (Step 7); a changed plan or reply needs a new approval
 - **PR mode:** never post replies that have not been approved, or that no longer match what was implemented; the reply file must pass validation first
 - Never mark an item resolved without either implementing a fix or a documented rejection reason
-- Keep commits small and scoped to the item being addressed; stage only the files changed for each finding
+- Implement each item with its own implementer subagent and get it reviewed and committed by a separate reviewer subagent, one item at a time. The main session does not edit code itself in Step 4
+- Keep commits small and scoped to the item being addressed; stage only the files changed for each finding. Only the reviewer subagent commits, and only after approving
 - Do not rewrite unrelated code while addressing review findings
 - If a fix introduces risk, flag it to the user before implementing
 - **PR mode:** when responding to more than 3 inline threads, never post per-thread replies — one grouped PR-level comment plus "resolved" status only, to minimise notification emails
