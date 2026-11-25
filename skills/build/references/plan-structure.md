@@ -15,7 +15,7 @@ docs/plans/[feature-slug]/
     02-[phase-slug]/
       README.md
       01-[step-slug].md
-  .build-state.json             hook-only cache — see "Cache file" below. Not the record of truth; safe to gitignore.
+  .build-state.json             build state: per-step status, commit SHA, live review content — see "Cache file" below. Not the record of truth; safe to gitignore.
   .build-state.log.jsonl        append-only archive of approved steps' full review content — see "Cache file" below. Gitignore this too.
 ```
 
@@ -179,11 +179,10 @@ foreman writes `status` transitions on dispatch (`in_progress`, `in_review`); in
 Rules:
 
 - A step may only be written with `"status": "done"` in the same update that fills in a non-null `commit`. Never done-now-commit-later.
-- **On `APPROVE`**, inspector does three things atomically: commit, append one line to `.build-state.log.jsonl` with the step id, timestamp, commit SHA, and the full verdict (justification + any non-blocking suggestions), then write the compact `review: {"verdict": "APPROVE"}` — not the full text — into `.build-state.json`, discarding any prior `CHANGES_REQUESTED` feedback for that step now that it's resolved. This is what keeps the cache from growing over the life of a plan: nothing ever needs a done step's full review text again, so it doesn't have to stay in the file every other tool call reads and writes.
+- **On `APPROVE`**, inspector does three things atomically: commit, append one line to `.build-state.log.jsonl` with the step id, timestamp, commit SHA, and the full verdict (justification + any non-blocking suggestions), then write the compact `review: {"verdict": "APPROVE"}` — not the full text — into `.build-state.json`, discarding any prior `CHANGES_REQUESTED` feedback for that step now that it's resolved. This is what keeps the cache from growing over the life of a plan: nothing ever needs a done step's full review text again, so it doesn't have to stay in the file foreman polls and inspector rewrites on every step.
 - **While a step is `in_progress`/`in_review`**, its `CHANGES_REQUESTED` feedback stays live and full in `.build-state.json` — not archived — because crewman reads it directly on its next dispatch. Only an `APPROVE` triggers the compact-and-archive step above.
 - `status`, `commit`, and `ticket` remain regenerable from the tracker if the cache is lost — that part of the old "safe to delete anytime" claim still holds for the cache.
 - **The log is not regenerable.** Full review history — inspector's past feedback, verdict rationale — exists nowhere else once archived. It's gitignored and outside version control, same as the cache, with no mechanical backup beyond this note. Losing the cache alone (e.g. a manual reset) no longer costs a plan its whole review history, only the live `CHANGES_REQUESTED` feedback for steps currently in flight.
-- Its presence anywhere under `docs/plans/*/.build-state.json` in the repo is exactly the gate the hooks use to decide whether they're inert. No cache file means no active `build` plan, and the hooks no-op. The log's presence isn't part of that gate.
 
 ## Expressing parallelism
 

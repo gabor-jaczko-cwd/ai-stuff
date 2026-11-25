@@ -12,13 +12,17 @@ Crewman and inspector run in their own context windows and return only distilled
 
 ## Foreman's own footprint is bounded by its tool list
 
-Foreman's tools are `Task`, `TodoWrite`, and `Read`/`Write` hook-scoped to exactly `PLAN.md` and `.build-state.json`. It cannot `grep` the codebase, cannot run the test suite itself, cannot open arbitrary files. Its context grows by roughly: one dispatch call plus one short status poll per step, not by whatever raw exploration it might otherwise be tempted to do. This is what keeps a foreman generation's context small regardless of how many steps it drives, and it's enforced by the harness (the tools genuinely aren't offered), not by prose telling it to behave.
+Foreman's tools are `Task`, `TodoWrite`, `Read` and `Write`. It writes only `PLAN.md` and `.build-state.json`, and reads only the plan, the skill's references and the project context. It cannot `grep` the codebase, cannot run the test suite itself, cannot open arbitrary files. Its context grows by roughly: one dispatch call plus one short status poll per step, not by whatever raw exploration it might otherwise be tempted to do. This is what keeps a foreman generation's context small regardless of how many steps it drives, and the missing tools are enforced by the harness (they genuinely aren't offered), not by prose telling it to behave.
 
 ## Resets instead of self-compaction
 
 Foreman cannot clear its own context (`/clear` is a harness-level action, not something an agent can invoke on itself) and is not asked to try. Instead, it's spawned fresh by the root at each reset point (see `agents/foreman.md` and `loop-protocol.md`) — a `checkpoint: true` phase, autonomy `checkpoint`, an escalation, or any point it would otherwise sit idle waiting on something outside the plan. Reset cadence is tied to where a gap already exists, not a fixed step count: a well-behaved, tool-restricted foreman doesn't need a reset every few steps just to stay small, but resetting before a gap caps how much context is ever exposed to a stale prompt-cache entry (long idle gaps risk a cache miss being rebilled at the more expensive cache-write rate — see the profile's `test_command` latency as a rough guide to how long a step-to-step gap actually is on this project).
 
 Each new foreman generation starts from: `PLAN.md`, the current phase's README, and a fresh read of `.build-state.json`/the tracker for status. Nothing carries forward as remembered prose — if the next generation needs to know something, it's either already on the tracker/cache or re-derivable by reading the code, never something the previous generation has to have "remembered to mention" in a handoff message.
+
+## Before any compaction
+
+If a session does compact (the root, or any agent whose context fills up), first bring the tracker and `.build-state.json` up to date for every step touched. Anything not written there is lost with the compacted context.
 
 ## What to keep versus discard
 

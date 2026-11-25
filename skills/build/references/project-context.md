@@ -47,7 +47,7 @@ scratch_paths:
 
 ## Validating `scratch_paths`
 
-Each entry grants inspector real write access, enforced by the `PreToolUse` hook in `agents/inspector.md` — treat it with the same care as a guardrail, just in the opposite direction. Before relying on a profile's `scratch_paths`, confirm each entry is itself covered by this project's own `.gitignore`. An entry that isn't gitignored would let inspector's throwaway artifacts get committed as if they were real files, and defeats the reason this exists — reject or flag it rather than loading it silently. This check happens once, when the profile is resolved (Step 0), not per-write.
+Each entry grants inspector real write access (see `agents/inspector.md`) — treat it with the same care as a guardrail, just in the opposite direction. Before relying on a profile's `scratch_paths`, confirm each entry is itself covered by this project's own `.gitignore`. An entry that isn't gitignored would let inspector's throwaway artifacts get committed as if they were real files, and defeats the reason this exists — reject or flag it rather than loading it silently. This check happens once, when the profile is resolved (Step 0), not per-write.
 
 `inspector` always runs `code-review`'s Standards + Spec axes, and `crewman` always leans on `tdd`/`run` where they apply — neither is project-configurable.
 

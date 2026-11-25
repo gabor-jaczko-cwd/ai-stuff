@@ -25,7 +25,7 @@ pending -> in_progress -> in_review -> done
 5. **Loop or advance.** On `CHANGES_REQUESTED`, foreman re-dispatches crewman with just the step id (crewman reads the feedback itself) and returns to step 2, counting the cycle. On `APPROVE`, foreman marks the step `done` and moves to the next unblocked step — the commit and tracker sync already happened inside inspector's own dispatch, not as a separate action foreman performs afterward.
 6. **Cap.** If a step's crewman/inspector cycle count exceeds `cycle_cap` (default 3) still unresolved, foreman sets it `escalated` (tracker + cache) and stops, reporting to the root.
 
-A `Stop` hook (`commit_guard.py`, declared in SKILL.md, foreman and inspector frontmatter) still enforces the commit invariant deterministically: it blocks a turn from ending if `.build-state.json` shows any step `done` with no commit recorded. Under this protocol that should never trigger in normal operation, since inspector commits in the same action that marks a step done — treat a trip of this hook as a bug in inspector's own execution, not a false positive.
+The commit invariant: a step is marked `done` only in the same update that records its commit SHA. Inspector commits in the same action as its APPROVE, and foreman never treats a step as done without a recorded commit. A `done` step with no commit is a bug in inspector's run, not a finished step.
 
 ## Handoff payloads
 

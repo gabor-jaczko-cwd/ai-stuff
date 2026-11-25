@@ -2,15 +2,6 @@
 name: build
 description: Drive a large, multi-phase feature to completion with an unattended (or lightly attended) agent loop — a persistent root session spawns foreman fresh at each reset point, foreman coordinates, crewman is the only one that writes code, inspector verifies and commits every step. Reserved for work too big or too long-running to hand-hold; everyday ticket work stays on wayfinder/to-spec/to-tickets/implement/code-review. Use when the user wants a feature built end to end across many steps without reviewing each one personally, or explicitly asks to "run build" / "build this plan".
 argument-hint: "A to-spec doc, a to-tickets breakdown, or nothing to plan from the current conversation"
-hooks:
-  Stop:
-    - hooks:
-        - type: command
-          command: python3 "$HOME"/.claude/hooks/build/commit_guard.py
-  PreCompact:
-    - hooks:
-        - type: command
-          command: python3 "$HOME"/.claude/hooks/build/precompact_check.py
 ---
 
 # Build
@@ -22,7 +13,7 @@ Turn a spec or an existing ticket breakdown into a phased, dependency-aware plan
 ## When to use
 
 - A feature is big enough that `implement` in one session won't hold it, and you want it driven across a context-reset-safe loop instead of you manually re-invoking `implement` per ticket.
-- You want hard sign-off (evals + independent review + recorded commit) enforced by hooks and tool restrictions, not just prose discipline — because nobody's watching every step.
+- You want hard sign-off (evals + independent review + recorded commit) on every step, because nobody's watching every step.
 - Trigger phrases: "build this out end to end", "run build on this plan", "drive this to completion".
 
 ## Relationship to the rest of the pack
@@ -80,35 +71,24 @@ The loop, per step (full detail in `references/loop-protocol.md`):
 5. **inspector** reviews the diff and eval results — Standards + Spec, scoped to this step, with the Spec axis covering acceptance-criteria conformance — and either commits (on APPROVE) or writes numbered feedback (on CHANGES_REQUESTED) directly to `.build-state.json`. On changes, foreman re-dispatches crewman by step id only — crewman reads the feedback itself — and steps 3–5 repeat, up to the cycle cap.
 6. foreman learns the outcome by polling `.build-state.json`, never by reading inspector's report content. On APPROVE, the commit and tracker sync already happened inside inspector's dispatch.
 
-At each reset point, foreman ends its turn and reports to the root rather than attempting to clear its own context — no tool lets an agent invoke `/clear` on itself, and unlike the old design, foreman doesn't need to: its tool list (`Task`, `TodoWrite`, and `Read`/`Write` hook-scoped to `PLAN.md` + `.build-state.json`) keeps its own footprint small enough that reset cadence is about avoiding idle gaps, not runaway growth. See `references/context-compaction.md`.
+At each reset point, foreman ends its turn and reports to the root rather than attempting to clear its own context — no tool lets an agent invoke `/clear` on itself, and unlike the old design, foreman doesn't need to: its tool list (`Task`, `TodoWrite`, `Read` and `Write`, with writes limited to `PLAN.md` + `.build-state.json`) keeps its own footprint small enough that reset cadence is about avoiding idle gaps, not runaway growth. See `references/context-compaction.md`.
 
 When every phase is done, foreman dispatches inspector to run one final `/code-review` over the whole commit range before declaring the plan complete.
 
-Hooks back up the parts that prose alone can't guarantee. The scripts live in `~/.claude/hooks/build/` (source: `dot_agents/hooks/build/`). None of them is registered in `settings.json`. Each one is declared in the frontmatter of whatever needs it, so Claude Code only starts it while that skill or agent is active. Each script also exits quietly unless it finds a `.build-state.json`.
+Rules the loop depends on:
 
-| Script | Event | Declared in | Active while |
-| :- | :- | :- | :- |
-| `commit_guard.py` | Stop (SubagentStop in the agents) | this file, `agents/foreman.md`, `agents/inspector.md` | from `/build` invocation to the end of the session (root), and while foreman or inspector runs |
-| `precompact_check.py` | PreCompact | this file | from `/build` invocation to the end of the session |
-| `review_commit_reminder.py` | PostToolUse `Agent\|Task` | `agents/foreman.md` | foreman runs (it is the agent that dispatches inspector) |
-| `foreman_scope_guard.py` | PreToolUse `Read\|Write` | `agents/foreman.md` | foreman runs |
-| `inspector_scope_guard.py` | PreToolUse `Write\|Edit\|Bash` | `agents/inspector.md` | inspector runs |
-
-- `commit_guard.py` blocks a turn from ending if the cache shows any step `done` with no commit recorded. Should never trigger under normal operation now that inspector commits atomically with its own APPROVE, but stays as the deterministic backstop.
-- `review_commit_reminder.py` fires right after an `inspector` dispatch returns; a lighter check now that inspector syncs itself, retained as a sanity check.
-- `precompact_check.py` fires before any compaction while a plan is active, reminding whoever is driving the session that the tracker and cache must be current first.
-- `foreman_scope_guard.py` blocks foreman's `Read`/`Write` calls to anything other than `PLAN.md` and `.build-state.json` for the active plan.
-- `inspector_scope_guard.py` blocks inspector's `Write`/`Edit` and repo-mutating `Bash` outside its allowlist: `git add`/`git commit`, `.build-state.json`, its own `.claude/agent-memory/inspector/**`, the OS scratchpad, and any project-declared `scratch_paths`.
-
-Skill hooks register when the skill is invoked and are dropped by `/clear` and `/resume`. A root session that was resumed or cleared mid-build has to invoke `/build` again before it continues the plan, or it runs without the root Stop and PreCompact hooks. The agent hooks don't depend on this, because they load each time foreman or inspector is spawned.
+- Foreman writes only `PLAN.md` and `.build-state.json`. It reads only what its instructions name: the plan files, `.build-state.json`, this skill's `references/*`, the project's `CLAUDE.md` and `.claude/local/build.md`, and its own agent memory.
+- Inspector writes only `.build-state.json`, `.build-state.log.jsonl`, its agent memory, the session scratchpad and the project's `scratch_paths`. It never edits source or test files, and runs no git command that changes history or the branch. `git add` and `git commit` for its own step are allowed.
+- A step is marked `done` only in the same update that records its commit SHA. Inspector commits in the same action as its APPROVE, and foreman never treats a step as done without a recorded commit.
+- Before any compaction, bring the tracker and `.build-state.json` up to date for every step touched.
 
 ## Agents
 
 Definitions live in `agents/` alongside this file (`agents/README.md` has install instructions — symlink each into `~/.claude/agents/`):
 
-- **foreman** (Opus) — spawned fresh per reset point, not the main session. Pure orchestration: dispatches, polls, escalates. Tool-restricted to `Task`, `TodoWrite`, and hook-scoped `Read`/`Write` on `PLAN.md`/`.build-state.json` only — no `Bash`, `Grep`, or `Edit`.
+- **foreman** (Sonnet) — spawned fresh per reset point, not the main session. Pure orchestration: dispatches, polls, escalates. Tool-restricted to `Task`, `TodoWrite`, `Read` and `Write`, and writes only `PLAN.md`/`.build-state.json` — no `Bash`, `Grep`, or `Edit`.
 - **crewman** (Sonnet) — the only agent that modifies the codebase. Implements one step at a time, writes and runs its evals, reports back. Never commits.
-- **inspector** (Opus) — verifies each step via `code-review`'s Standards + Spec axes, scoped to the step, folds in what used to be foreman's separate conformance check, commits on APPROVE, and posts status/feedback to `.build-state.json`. Hook-scoped write access for exactly that, plus scratch verification artifacts — never arbitrary repo mutation.
+- **inspector** (Opus) — verifies each step via `code-review`'s Standards + Spec axes, scoped to the step, folds in what used to be foreman's separate conformance check, commits on APPROVE, and posts status/feedback to `.build-state.json`. Writes only that, plus scratch verification artifacts — never source or test files.
 
 ## Autonomy and guardrails
 
@@ -120,7 +100,7 @@ Guardrails:
 
 - Per-step cycle cap (default 3). Exceeding it escalates with the open feedback.
 - crewman is the only agent permitted to modify real source/test files. Only inspector commits, and only as part of its own APPROVE.
-- Never bypass or weaken an eval to force a step to "done". Never mark a step done without a recorded commit — the `commit_guard.py` Stop hook enforces this.
+- Never bypass or weaken an eval to force a step to "done". Never mark a step done without a recorded commit.
 - Always honour the project profile's guardrails (a required format command, files that must never be touched) and, symmetrically, never grant `scratch_paths` beyond what the profile declares and validates against that project's own `.gitignore`.
 
 ## Output rules
