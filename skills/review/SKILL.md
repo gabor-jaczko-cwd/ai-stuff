@@ -33,7 +33,7 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 **PR mode — incremental detection (do this before fetching anything else):**
 1. Check for a local save file (`./tmp/review-pr-<number>.md`) — incremental if found
 2. If no save file: check GitHub for a prior review submitted by this agent on the PR — incremental if found
-3. **If incremental:** fetch the review threads on the PR (GraphQL `pullRequest.reviewThreads` → `id`, `isResolved`, `path`, `line`, first comment's `databaseId` and body) and record, for each inline comment from the previous review, its `comment_id` → finding mapping (file + line + excerpt) plus the thread's node `id` and `isResolved`, so threads of resolved findings can be marked resolved later
+3. **If incremental:** fetch the review threads on the PR (GraphQL `pullRequest.reviewThreads` → `id`, `isResolved`, `path`, `line`, first comment's `databaseId` and body) and record, for each inline comment from the previous review, its `comment_id` → finding mapping (file + line + excerpt) plus the thread's node `id` and `isResolved`
 
 ### 2. Gather Context
 
@@ -60,7 +60,7 @@ The skill auto-detects **PR mode** or **Branch mode** from the input:
 - If found, search available MCP tools via `ToolSearch` for a matching issue-tracker capability (Jira, Linear, GitHub Issues, etc.) and fetch the ticket
 - If the ticket has children/sub-issues (an epic with child stories/bugs, a parent issue with sub-issues, etc.), fetch and check each child too, one level deep — same mechanism, no tracker-specific naming
 - Compare the diff against each ticket's description/acceptance criteria and classify per ticket: **covered**, **partially covered**, or **not covered**
-- If no ticket-shaped token is found, no matching tracker tool is reachable, or the fetch fails: skip this check entirely and omit it from the report — this is best-effort and must never block the review on an inability to verify
+- If no ticket-shaped token is found, no matching tracker tool is reachable, or the fetch fails: skip this check entirely and omit it from the report
 
 ### 3. Set Up Review Environment
 
@@ -68,14 +68,14 @@ Determine whether subagents will operate against a disposable **read-only worktr
 
 **If `use-cwd` was requested:**
 1. Run `git status`. If the working directory has *any* uncommitted changes (tracked or untracked), **abort the review immediately** with a clear error telling the user to commit or stash and re-run. Do not fall back to the worktree path silently, and do not do any other setup work first.
-2. If clean, check out the **real** branch — never a synthetic name invented for the review — since this is the branch left behind in point 3:
+2. If clean, check out the **real** branch — never a synthetic name invented for the review:
    - **Branch mode:** fetch and `git checkout <branch>` directly in the working directory
    - **PR mode:** use the PR's actual head branch name (`head.ref`, from the metadata already fetched in Step 2), same-repo branches only — this skill does not special-case fork PRs:
      - `git fetch origin <head-branch>`
      - If a local branch named `<head-branch>` already exists, check for commits it has that `origin/<head-branch>` doesn't (`git log origin/<head-branch>..<head-branch>`). If any exist, **abort** and tell the user — never silently discard local work sitting on that branch name.
-     - Otherwise: `git checkout -B <head-branch> origin/<head-branch>`. `-B` both creates the branch on a first-time review and force-resets it to match the fetched remote tip on every later one — so a force-push (rebase, amend) on the PR is always picked up cleanly instead of leaving the local branch stuck on stale or diverged history.
-3. Do **not** restore the previously-checked-out branch after the review finishes — leave the working directory on the reviewed branch, since the user explicitly opted into using it live.
-4. **Fix the session's PR binding (Claude desktop only).** The desktop app binds the PR of whichever branch was checked out when the session started, so the checkout in point 2 leaves the session bound to the *previous* branch's PR. Load the tools with `ToolSearch` (`select:mcp__ccd_pr__get_status,mcp__ccd_pr__unbind_pr,mcp__ccd_pr__bind_pr`); if they are not available (CLI, other client), skip this point silently. Otherwise call `get_status` and compare the bound PR's URL with the reviewed PR:
+     - Otherwise: `git checkout -B <head-branch> origin/<head-branch>`. (`-B` also resets an existing branch to the remote tip.)
+3. Do **not** restore the previously-checked-out branch after the review finishes — leave the working directory on the reviewed branch.
+4. **Fix the session's PR binding (Claude desktop only).** The checkout in point 2 leaves the session bound to the previous branch's PR. Load the tools with `ToolSearch` (`select:mcp__ccd_pr__get_status,mcp__ccd_pr__unbind_pr,mcp__ccd_pr__bind_pr`); if they are not available (CLI, other client), skip this point silently. Otherwise call `get_status` and compare the bound PR's URL with the reviewed PR:
    - **PR mode:** if a different PR is bound, `unbind_pr` it, then `bind_pr` the reviewed PR's URL. If the reviewed PR is already bound, do nothing.
    - **Branch mode:** if a bound PR's head branch is not the reviewed branch, `unbind_pr` it. Bind nothing unless an open PR for the reviewed branch exists and the user asked for one.
    - Never unbind a PR whose branch is the reviewed branch. A failed or declined bind/unbind never blocks the review; mention it in the report header.
@@ -83,10 +83,10 @@ Determine whether subagents will operate against a disposable **read-only worktr
 
 **Otherwise (default):**
 1. Resolve the source ref to a commit SHA (`git rev-parse <branch>`, or the PR head SHA)
-2. In PR mode, fetch the PR head explicitly if not already done — into `FETCH_HEAD`, **not** a named local ref, so this disposable path never leaves a branch behind either: `git fetch origin pull/<number>/head`
+2. In PR mode, fetch the PR head explicitly if not already done — into `FETCH_HEAD`, **not** a named local ref: `git fetch origin pull/<number>/head`
 3. If a worktree already exists at the target path from a stale/interrupted prior review, remove it first (`git worktree remove --force`)
-4. Create a **detached** worktree at that SHA: `git worktree add --detach ./tmp/review-worktrees/<pr-number|branch-name> <sha>` — detached so it never conflicts with a branch checked out elsewhere (including the main worktree)
-5. **If `git worktree add` fails for any reason, abort the review** with the underlying git error. Do not fall back to reading from the ambient working directory — that reintroduces the exact unreliable-checkout problem this step exists to fix.
+4. Create a **detached** worktree at that SHA: `git worktree add --detach ./tmp/review-worktrees/<pr-number|branch-name> <sha>`
+5. **If `git worktree add` fails for any reason, abort the review** with the underlying git error. Do not fall back to reading from the ambient working directory.
 6. This worktree is shared **read-only** by every subagent spawned in Steps 4–5. Base-branch file content (e.g. to inspect a deleted or renamed file) is read via `git show <base-ref>:<path>` — no second worktree is created.
 7. Tear down the worktree (`git worktree remove`) once Step 6's report has been produced, including on early-exit paths (e.g. the user cancels after the large-diff prompt in Step 4).
 
@@ -152,7 +152,7 @@ Each subagent will:
 - The worktree/working-directory path and base ref (same as Step 5)
 - Whether `use-cwd` is active
 
-**Only if `use-cwd` is active:** the coherence subagent may run the project's existing tests or static-analysis tooling to resolve runtime-behaviour unverified findings (e.g. `./coral test <path>`, `./coral pint --dirty`) — never arbitrary or destructive commands, and never against a finding outside the diff's scope. This is the **only** point in the whole workflow where code is executed; group subagents in Step 5 never execute anything, since they run concurrently against a shared live environment and could contend with each other (test DB, ports, etc.).
+**Only if `use-cwd` is active:** the coherence subagent may run the project's existing tests or static-analysis tooling to resolve runtime-behaviour unverified findings (e.g. `./coral test <path>`, `./coral pint --dirty`) — never arbitrary or destructive commands, and never against a finding outside the diff's scope. This is the **only** point in the whole workflow where code is executed; group subagents in Step 5 never execute anything.
 
 The subagent returns a final confirmed list, an updated dismissed list (with cross-group reasons), and any new cross-group findings. Reattach the held `[PREVIOUSLY RAISED]` findings to the confirmed list after receiving the coherence subagent's output. Use the combined result as the authoritative finding set for the report.
 
@@ -177,7 +177,7 @@ The subagent returns a final confirmed list, an updated dismissed list (with cro
 
 In PR incremental mode, label each finding as **[NEW]**, **[PREVIOUSLY RAISED]**, or **[RESOLVED]**:
 - **[NEW]** findings go in the active findings table and affect the verdict normally.
-- **[PREVIOUSLY RAISED]** findings are moved to a separate **"⏳ Still open from last review"** section and do **not** affect the verdict — the previous review already set that expectation.
+- **[PREVIOUSLY RAISED]** findings are moved to a separate **"⏳ Still open from last review"** section and do **not** affect the verdict.
 - **[RESOLVED]** findings go in a separate **"✅ Resolved since last review"** section and do not affect the verdict.
 
 **Write the save file** — follow _Finalization_ under _Save/Continue_ below exactly; it requires reading any existing file's content before writing.
@@ -203,7 +203,7 @@ In PR incremental mode, label each finding as **[NEW]**, **[PREVIOUSLY RAISED]**
 5. **Post the review:**
    - **If verdict is REQUEST_CHANGES or COMMENT and there are inline findings** (file path + line number): create a pending review, post each as an inline comment for **[NEW] findings only** — never post a new inline comment for `[PREVIOUSLY RAISED]` findings, as their thread already exists on the PR. Then submit with the final comment body and verdict.
    - **Otherwise:** submit directly with the final comment body and verdict
-   - **Incremental mode — resolve addressed threads:** for each `[RESOLVED]` finding with a recorded thread, mark the thread resolved (GraphQL `resolveReviewThread` with the thread node `id`) **without posting a reply** — a reply per thread spams the author with notifications, and the review body already lists these under "✅ Resolved since last review". Re-check `isResolved` just before resolving and skip threads the author already resolved.
+   - **Incremental mode — resolve addressed threads:** for each `[RESOLVED]` finding with a recorded thread, mark the thread resolved (GraphQL `resolveReviewThread` with the thread node `id`) **without posting a reply**. Re-check `isResolved` just before resolving and skip threads the author already resolved.
    - Show a completion summary: inline comments posted (if any), findings in final comment, threads resolved (and how many were already resolved by the author). List any failures.
 
 **Branch mode** — no post-review actions. Report is chat-only.
@@ -252,14 +252,14 @@ The save file is **only ever written once per review, at the end of step 7** —
 
 Writing it is always a single **read-then-write**, never an in-place edit of the file that's already there:
 
-1. **Attempt to read the save file path now, regardless of what the workflow's Step 1 already determined.** Knowing the file *exists* (from Step 1's incremental-detection check) is not the same as having its *content* — you need the actual bytes in hand before step 3 below.
+1. **Attempt to read the save file path now, regardless of what the workflow's Step 1 already determined.**
 2. If that read succeeds, take its full contents as `OLD_CONTENT` verbatim (frontmatter, body, all of it, unmodified). If it fails (no file), `OLD_CONTENT` is empty.
 3. Compose the full new file contents as one string, in this exact order, then write it with a single `Write` call:
    - New frontmatter, with this review's `status: completed` and `started` set to this review's timestamp
    - This review's completed report
    - Only if `OLD_CONTENT` is non-empty: a `---` separator line, then `<!-- reviewed: <OLD_CONTENT's `started` timestamp> -->`, then `OLD_CONTENT` unchanged
 
-Never write the new report alone when `OLD_CONTENT` exists — that deletes review history. Never build this with a partial/`Edit`-style patch against the old file — read fully, concatenate in memory, write once.
+Never write the new report alone when `OLD_CONTENT` exists. Never build this with a partial/`Edit`-style patch against the old file — read fully, concatenate in memory, write once.
 
 The result is always: **frontmatter → latest completed review → `---` → `<!-- reviewed: ... -->` → older reviews (newest-first)**
 

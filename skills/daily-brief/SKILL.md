@@ -23,15 +23,9 @@ skill itself needs to know at runtime.
 
 Before doing anything else, read `config.yaml` from this skill's own
 directory. If it doesn't exist, stop and tell the user to complete Setup
-above — don't guess at repos or IDs, and don't fail deep into the run with a
-confusing error.
+above; don't guess at repos or IDs.
 
-Use the **`gh` CLI** (via Bash) for all PR data — not the GitHub MCP tool.
-The MCP tool's `get_reviews`/`get_comments` methods return full review/comment
-bodies with no way to ask for just the metadata, which can be large enough to
-blow past the MCP tool's response-size limit on some PRs. `gh ... --json
-... --jq '...'` filters server/CLI-side before the data ever reaches you, so
-it never hits that ceiling. Don't mix MCP and CLI for this data — CLI only.
+Use the **`gh` CLI** (via Bash) for all PR data, never the GitHub MCP tool.
 
 ## 1. Calendar
 
@@ -45,15 +39,11 @@ Drop any event with `isCancelled: true`. Sort by start time ascending.
 
 **Always convert each event's time into `display_timezone`** (from
 `config.yaml`), using the event's own returned `timeZone` as the source zone
-— never render `dateTime` as-is. Do the conversion with real
-timezone-database tooling, in **one** call to this skill's own
-`convert_tz.py` script for every event's start/end at once — never by hand,
-and never by asking the model to reason about offsets or DST itself, which
-is exactly the kind of arithmetic that silently gets these wrong. Invoke it
-with a path **relative to this skill's own directory**, not an absolute
-path — `./convert_tz.py`, never `/home/.../skills/daily-brief/convert_tz.py`
-— so the headless run's permission allowlist (see `README.md`) can grant
-exactly this one fixed script rather than arbitrary Python source:
+— never render `dateTime` as-is. Convert every event's start/end in **one**
+call to this skill's own `convert_tz.py` script — never by hand or by
+reasoning about offsets or DST. Invoke it as `./convert_tz.py`, relative to
+this skill's own directory, never by absolute path (the headless run's
+permission allowlist only matches the relative form; see `README.md`):
 ```
 ./convert_tz.py <display_timezone> <dateTime_1> <timeZone_1> <dateTime_2> <timeZone_2> ...
 ```
@@ -73,29 +63,19 @@ For each event, render one line:
   today.`
 
 **If the calendar tool call fails for any reason** — including a permission
-prompt that never resolves — retry up to 3 times, then stop trying and move
-on. Never pause the run to wait for a human to approve a permission prompt;
-when this runs headlessly (via the scheduled job) there is no one there to
-approve it, and stalling means the whole brief never gets sent. Treat it as
-a Failures-section case (see below): render the calendar section as
+prompt that never resolves — retry up to 3 times, then move on. Never pause
+the run to wait for a human to approve a permission prompt. Treat it as a
+Failures-section case (see below): render the calendar section as
 `⚠️ Could not fetch calendar (<short reason>) — showing PR data only.` and
-continue straight on to the Pull requests section. This must be the actual
-behavior every run, not a judgment call — a prior run stalled asking for
-approval instead of degrading gracefully, and that's the bug this rule
-fixes.
+continue straight on to the Pull requests section.
 
 ## 2. Pull requests
 
 Read `repos` and `github_login` from `config.yaml`.
 
-For each repo, fetch everything needed in **one** `gh api graphql` call, with
-a `--jq` filter that strips review/comment bodies server-side so they never
-enter your context. Use a raw GraphQL query rather than `gh pr list --json`:
-`gh pr list --json commits` pulls in every commit's `authors` connection
-whether you ask for it or not, and on a PR list of any size that blows past
-GitHub's GraphQL node-count limit (100 PRs × commits × authors can exceed
-500,000 nodes). A hand-written query with `commits(last: 1)` and no `authors`
-sub-selection avoids that entirely.
+For each repo, fetch everything needed in **one** `gh api graphql` call with
+this query and `--jq` filter. Never use `gh pr list --json` instead (it
+exceeds GitHub's GraphQL node limit).
 
 ```
 gh api graphql -f query='
@@ -144,15 +124,6 @@ query($owner: String!, $name: String!) {
 }]'
 ```
 
-`lastCommitAt` comes from the PR's single most recent commit — no need to
-reduce an array, `commits(last: 1)` already gives just that one.
-
-`ci` reuses GitHub's own rollup (`statusCheckRollup.state` on the latest
-commit) rather than aggregating individual check runs by hand.
-
-Draft PRs are excluded entirely — `select(.isDraft == false)` drops them before
-they ever reach the classification step below.
-
 If a repo's call fails or errors, note it (see Failures below) and move on —
 don't abort the whole run.
 
@@ -182,12 +153,7 @@ passing`, `none` → omit the CI marker.
        `submittedAt`; `ever_approved` = true.
      - `DISMISSED` → `standing` = none again (`ever_approved` stays as it
        was).
-     - `COMMENTED` → never changes `standing` or `ever_approved`. A reviewer
-       who approves and then leaves follow-up single-comment reviews (a
-       common GitHub pattern: replying to their own inline threads right
-       after approving) still reads as "Approved" in GitHub's own Reviewers
-       panel; a later `COMMENTED` review from the same person doesn't
-       downgrade it.
+     - `COMMENTED` → never changes `standing` or `ever_approved`.
    - **If any reviewer ends with `standing` none but `ever_approved` true**
      (a later commit got their approval/changes-requested `DISMISSED`, and
      nobody has re-reviewed since) → **Updated** bucket, marked `🆕 new
@@ -198,15 +164,11 @@ passing`, `none` → omit the CI marker.
      bucket, marked `🆕 no review yet`.
    - **If `last_review`'s state is `APPROVED`** → **Reviewed** bucket,
      marked `✅ approved by @<login>`. Do not compare against `lastCommitAt`
-     here: GitHub only emits `DISMISSED` once it has already decided a new
-     commit invalidates an approval (a no-op fast-forward merge does not get
-     one), and that's already handled by the `DISMISSED` check above — trust
-     it instead of re-deriving staleness from commit timestamps.
+     here; the `DISMISSED` check above already covers invalidated approvals.
    - **Otherwise** (`last_review`'s state is `CHANGES_REQUESTED` or
-     `COMMENTED`) — GitHub has no equivalent auto-resolution signal for
-     these, so compare `last_review`'s `submittedAt` against `lastCommitAt`,
-     NOT `updatedAt` (`updatedAt` bumps on anything — a bot comment, a
-     label, a reply — and doesn't mean new code landed): if `lastCommitAt`
+     `COMMENTED`), compare `last_review`'s `submittedAt` against
+     `lastCommitAt`, NOT `updatedAt` (which bumps on any activity, not just
+     new code): if `lastCommitAt`
      is newer → **Updated** bucket, marked `🆕 new commits since last review
      (<login> <state>)`; otherwise → **Reviewed** bucket, marked `🔴 changes
      requested by @<login>` or `💬 commented by @<login>` accordingly.
@@ -220,26 +182,19 @@ Render each bucket as:
 Omit a bucket entirely if it has zero PRs. If all three buckets are empty:
 `No PRs need attention.`
 
-**Added as reviewer**: this is the same set of people GitHub's PR UI shows
-under "Reviewers" — everyone ever requested, whether or not they've reviewed
-yet. `github_login` counts as added if EITHER: they appear in the PR's
-`reviewRequests` (currently requested, hasn't reviewed yet), OR they appear
-as an `author` in the PR's `reviews` array (already submitted a review,
-any state — approved, changes requested, or just commented). Checking only
-`reviewRequests` misses everyone who already reviewed, since GitHub drops a
-person from `reviewRequests` once their review is submitted. If either is
-true, render that PR's two-line entry in Slack bold. Slack's mrkdwn bold does
-NOT span a newline — a single `*...*` pair wrapped around both lines renders
-as literal asterisks, not bold (verified empirically: bold on one line works,
-bold "across\nlines" does not). Instead, wrap **each line in its own `*`
-pair**:
+**Added as reviewer**: `github_login` counts as added if EITHER: they appear
+in the PR's `reviewRequests` (currently requested, hasn't reviewed yet), OR
+they appear as an `author` in the PR's `reviews` array (already submitted a
+review, any state). If either is true, render that PR's two-line entry in
+Slack bold, wrapping **each line in its own `*` pair** (Slack bold does not
+span a newline):
 ```
 • *<url as Slack link>|#<number>> <title>*
   *by @<author> · updated <relative time> · <bucket-specific marker> · <CI marker>*
 ```
 This applies in whichever bucket the PR lands in, including **My PRs**.
 
-Do not include repo names in the PR lines — the link is enough.
+Do not include repo names in the PR lines.
 
 ## 3. Failures
 
@@ -249,9 +204,8 @@ failure — `⚠️ Could not fetch calendar (<short error>) — showing PR data
 only.` or `⚠️ Could not fetch PRs from <repo> (<short error>) — showing
 partial results.`
 
-Never abort the whole brief, and never stop to wait on a permission prompt,
-because one call failed — this runs headlessly with no one to approve
-anything, so any stall here means the brief silently never gets sent.
+Never abort the whole brief because one call failed, and never stop to wait
+on a permission prompt.
 
 ## 4. Compose and send
 
@@ -270,17 +224,12 @@ Message template:
 <any ⚠️ failure lines>
 ```
 
-**Sending**: use a dedicated Slack bot (not the `slack_send_message` MCP
-tool). The MCP connector authenticates with the user's own personal OAuth
-token, so every message it sends — DM or channel, self-mentioned or not —
-is posted *as the user*, and Slack never push-notifies you for your own
-messages. A bot token is a distinct identity, so a bot-to-user DM notifies
-normally. The bot token lives at `slack-bot-token` in this skill's own
+**Sending**: use the dedicated Slack bot, never the `slack_send_message`
+MCP tool. The bot token lives at `slack-bot-token` in this skill's own
 directory — never print, log, or echo its contents.
 
-Send with this skill's own `send_slack_message.py` script, invoked with a
-path **relative to this skill's own directory** (`./send_slack_message.py`,
-same permission-scoping reason as `convert_tz.py` above), passing
+Send with this skill's own `send_slack_message.py` script, invoked as
+`./send_slack_message.py` (relative, like `convert_tz.py` above), passing
 `slack_user_id` (from `config.yaml`) as its one argument and the composed
 message on **stdin** via a heredoc:
 
@@ -290,25 +239,13 @@ message on **stdin** via a heredoc:
 EOF
 ```
 
-The script handles both the `conversations.open` DM-channel lookup and the
-`chat.postMessage` send internally, JSON-encoding the payload itself via
-Python's `json` module — **never** hand-build a JSON string yourself for
-this (e.g. via a `curl -d '{"...": "..."}'` argument). The message contains
-newlines, emoji, and embedded quotes (from Slack's `<url|text>` link syntax);
-manually escaping that into a shell-quoted JSON literal is exactly the kind
-of error-prone-by-hand text-munging this skill avoids elsewhere (see the
-timezone conversion above) — a real run once hit exactly this failure mode,
-got stuck re-escaping a broken payload, and only recovered after several
-failed attempts. Passing the raw text via stdin and letting the script's own
-`json.dumps` handle escaping avoids the whole class of failure.
+The script does the DM-channel lookup and the send, and JSON-encodes the
+payload itself. **Never** hand-build a JSON string for this (e.g. a
+`curl -d '{"...": "..."}'` argument); always pass the raw message on stdin.
 
 The script prints the final Slack API response as JSON and exits non-zero
 on failure — check it for `"ok":true`; treat a non-zero exit or `"ok":false`
-as a Failures-section case (see below) rather than silently doing nothing.
-`conversations.open` is idempotent — calling it every run just returns the
-existing DM channel with the user, so there's no need to persist the channel
-ID anywhere across runs.
+as a Failures-section case.
 
 After sending, report back briefly (one line) that the Daily Brief was sent.
-Don't restate the whole report back to the user in chat if this was invoked
-interactively — the Slack message is the deliverable.
+Don't restate the report in chat.

@@ -18,13 +18,13 @@ Turn a spec or an existing ticket breakdown into a phased, dependency-aware plan
 
 ## Relationship to the rest of the pack
 
-`build` deliberately reuses what already works rather than reinventing it:
+`build` builds on the rest of the pack:
 
 - **Planning input is flexible** — from a `to-spec` document (decomposed itself) or an existing `to-tickets` breakdown (tickets become steps, blocking edges become `depends_on`). Decided per case.
-- **State lives on the tracker for status, and in `.build-state.json` for live review content** — approved steps' full review content is archived to a `.build-state.log.jsonl` sidecar to keep the cache bounded; see `references/plan-structure.md` for the exact split. Ticket claim/close/SHA still goes through the tracker as `wayfinder` does; verdicts and `CHANGES_REQUESTED` feedback are local-only, regardless of tracker.
+- **State lives on the tracker for status, and in `.build-state.json` for live review content** — approved steps' full review content is archived to a `.build-state.log.jsonl` sidecar; see `references/plan-structure.md` for the exact split. Ticket claim/close/SHA still goes through the tracker as `wayfinder` does; verdicts and `CHANGES_REQUESTED` feedback are local-only, regardless of tracker.
 - **inspector reuses `code-review`'s two-axis machinery**, scoped to one step's diff instead of a whole branch — and also runs the whole-branch pass at plan close (see below).
 - **crewman leans on `tdd`** for test-first discipline and the `run` skill for UI verification (see `references/evals.md`).
-- **At plan close, inspector runs a final whole-branch `/code-review`** over the entire commit range — catches cross-phase drift no per-step gate would. See `references/loop-protocol.md`.
+- **At plan close, inspector runs a final whole-branch `/code-review`** over the entire commit range. See `references/loop-protocol.md`.
 
 ## Step 0 — Load project context
 
@@ -50,7 +50,7 @@ State the mode when invoked.
 2. Decompose into phases (sequenced groups) and steps (single, independently buildable units — if the input was tickets, one ticket per step). Keep each step small enough for one crewman pass.
 3. Build the dependency graph (`depends_on` per step). If the input was a `to-tickets` breakdown, its blocking edges *are* the graph — don't re-derive it.
 4. Define evals for every phase and step up front (see `references/evals.md`). No step is done until its evals pass — this includes a browser-verification eval for any step that touches rendered UI.
-5. **Tag checkpoint phases now.** For any phase you or the user judge risky enough to warrant a pause before it runs — not the orchestrator's live self-judgment, decided here at plan-approval time — mark it `checkpoint: true` in its phase README (see `references/plan-structure.md`). This is in addition to autonomy's own pause behavior.
+5. **Tag checkpoint phases now.** For any phase you or the user judge risky enough to warrant a pause before it runs, mark it `checkpoint: true` in its phase README (see `references/plan-structure.md`). Decide this here, not at run time. It is in addition to autonomy's own pause behavior.
 6. Write the plan to `[plan_location]/[feature-slug]/` (default `docs/plans/`) using the templates in `references/plan-structure.md` (PLAN.md, per-phase README, per-step files). There is no STATE.md — progress lives on the tracker (see below).
 7. Summarise the plan and the critical path. If the mode is `plan`, or autonomy requires it, stop here for review.
 
@@ -59,19 +59,19 @@ State the mode when invoked.
 Execution runs across three layers, not one continuous session:
 
 - **Root** — the session you're already in (interactive or background). It stays alive for the whole plan but does almost nothing itself: at each reset point it spawns a fresh **foreman** subagent, waits, and spawns the next one when foreman reports back. It never touches code, the tracker, or `.build-state.json` directly.
-- **Foreman** — spawned fresh by the root at each reset point (a `checkpoint: true` phase, an escalation, or any point it would otherwise sit idle). Pure orchestration: selects the next unblocked step, dispatches crewman and inspector by step id, polls `.build-state.json` for outcomes. Never chains its own successor — see `agents/foreman.md`'s nesting-depth note.
-- **crewman / inspector** — spawned per step by foreman, exactly as before, except inspector now also verifies conformance, commits, and posts status/feedback to `.build-state.json` itself (see below).
+- **Foreman** — spawned fresh by the root at each reset point (a `checkpoint: true` phase, an escalation, or any point it would otherwise sit idle). Pure orchestration: selects the next unblocked step, dispatches crewman and inspector by step id, polls `.build-state.json` for outcomes. Never chains its own successor.
+- **crewman / inspector** — spawned per step by foreman. Inspector also verifies conformance, commits, and posts status/feedback to `.build-state.json` itself.
 
 The loop, per step (full detail in `references/loop-protocol.md`):
 
 1. foreman selects the next unblocked step (all `depends_on` done, per the tracker or `PLAN.md`).
 2. It hands **crewman** one step plus only the context it needs, including the project's test/format commands and applicable conventions.
 3. crewman implements the step, writes/runs its evals (test-first preferred, its call), does a browser check if the step touches UI, and returns a concise report.
-4. foreman dispatches **inspector** with the step and a pointer to crewman's report — it does not read or judge the report itself; there's no separate foreman-side conformance pass anymore.
+4. foreman dispatches **inspector** with the step and a pointer to crewman's report; it does not read or judge the report itself.
 5. **inspector** reviews the diff and eval results — Standards + Spec, scoped to this step, with the Spec axis covering acceptance-criteria conformance — and either commits (on APPROVE) or writes numbered feedback (on CHANGES_REQUESTED) directly to `.build-state.json`. On changes, foreman re-dispatches crewman by step id only — crewman reads the feedback itself — and steps 3–5 repeat, up to the cycle cap.
 6. foreman learns the outcome by polling `.build-state.json`, never by reading inspector's report content. On APPROVE, the commit and tracker sync already happened inside inspector's dispatch.
 
-At each reset point, foreman ends its turn and reports to the root rather than attempting to clear its own context — no tool lets an agent invoke `/clear` on itself, and unlike the old design, foreman doesn't need to: its tool list (`Task`, `TodoWrite`, `Read` and `Write`, with writes limited to `PLAN.md` + `.build-state.json`) keeps its own footprint small enough that reset cadence is about avoiding idle gaps, not runaway growth. See `references/context-compaction.md`.
+At each reset point, foreman ends its turn and reports to the root, which spawns the next foreman.
 
 When every phase is done, foreman dispatches inspector to run one final `/code-review` over the whole commit range before declaring the plan complete.
 
@@ -88,7 +88,7 @@ Definitions live in `agents/` alongside this file (`agents/README.md` has instal
 
 - **foreman** (Sonnet) — spawned fresh per reset point, not the main session. Pure orchestration: dispatches, polls, escalates. Tool-restricted to `Task`, `TodoWrite`, `Read` and `Write`, and writes only `PLAN.md`/`.build-state.json` — no `Bash`, `Grep`, or `Edit`.
 - **crewman** (Sonnet) — the only agent that modifies the codebase. Implements one step at a time, writes and runs its evals, reports back. Never commits.
-- **inspector** (Opus) — verifies each step via `code-review`'s Standards + Spec axes, scoped to the step, folds in what used to be foreman's separate conformance check, commits on APPROVE, and posts status/feedback to `.build-state.json`. Writes only that, plus scratch verification artifacts — never source or test files.
+- **inspector** (Opus) — verifies each step via `code-review`'s Standards + Spec axes, scoped to the step, commits on APPROVE, and posts status/feedback to `.build-state.json`. Writes only that, plus scratch verification artifacts — never source or test files.
 
 ## Autonomy and guardrails
 
@@ -106,7 +106,7 @@ Guardrails:
 ## Output rules
 
 - Planning artifacts go under the project's plan location (default `docs/plans/[feature-slug]/`).
-- Step/phase status lives on the tracker; `.build-state.json` (`references/plan-structure.md`) carries live review content — in-flight `CHANGES_REQUESTED` feedback, and a compact `{"verdict": "APPROVE"}` pointer for done steps. Its `status`/`commit`/`ticket` fields are regenerable from the tracker if lost; live `CHANGES_REQUESTED` feedback is not. Full review history for approved steps is archived to a sibling `.build-state.log.jsonl` the moment inspector approves — that's the only durable copy, and it's what keeps the cache bounded on a long plan. Both files are gitignored by convention, neither casually disposable.
+- Step/phase status lives on the tracker; `.build-state.json` (`references/plan-structure.md`) carries live review content — in-flight `CHANGES_REQUESTED` feedback, and a compact `{"verdict": "APPROVE"}` pointer for done steps. Full review history for approved steps is archived to a sibling `.build-state.log.jsonl` when inspector approves. Both files are gitignored; don't delete either.
 
 ## References
 
@@ -116,5 +116,4 @@ Load these only when the task needs them (progressive disclosure):
 - `references/plan-structure.md` — plan folder layout, file templates, tracker-state mapping, and the cache-file format.
 - `references/loop-protocol.md` — the root/foreman/crewman/inspector state machine, handoff payloads, sign-off gates, failure handling.
 - `references/evals.md` — eval types (including browser verification), how to define them per phase and step, and pass thresholds.
-- `references/context-compaction.md` — why each layer's context stays small by construction, and how reset points replace in-session compaction.
-- `references/long-running-commands.md` — how crewman/inspector wait out a full test/CI/browser suite that outlives a single foreground Bash call, without the self-matching `pgrep -f` bug that leaves permanently-stuck background shells.
+- `references/long-running-commands.md` — how crewman/inspector wait out a full test/CI/browser suite that outlives a single foreground Bash call.

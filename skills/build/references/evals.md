@@ -4,7 +4,7 @@ Evals are the objective sign-off for every step and phase. They are defined duri
 
 ## Principle
 
-No step is `done` until its evals pass, and no phase closes until its exit evals pass. Evals encode the spec's acceptance criteria as checks — automated where possible, visually verified where not — so "done" means demonstrably correct, not "looks right on paper".
+No step is `done` until its evals pass, and no phase closes until its exit evals pass. Evals encode the spec's acceptance criteria as checks, automated where possible and visually verified where not.
 
 ## Eval types
 
@@ -13,7 +13,7 @@ No step is `done` until its evals pass, and no phase closes until its exit evals
 - **Data-integrity assertions:** for steps that generate or transform data, assert invariants directly (counts, relationships, sums, ranges).
 - **Acceptance-criteria checks:** one test per Given / When / Then in the step.
 - **Performance checks (where relevant):** assert a batch completes, or an operation stays within a bound, for volume-sensitive steps.
-- **Browser verification (UI steps only):** for any step that changes rendered UI, this is required in addition to the automated types above — automated evals alone are not sufficient sign-off for a UI-facing step. crewman launches the app (via the `run` skill if the project has one, otherwise whatever the project profile's guardrails specify) and visually checks the golden path plus the step's stated UI acceptance criteria before reporting. Record what was checked and what it looked like in the crewman report; inspector's Spec axis checks this account against the acceptance criteria the same way it checks any other claim.
+- **Browser verification (UI steps only):** for any step that changes rendered UI, this is required in addition to the automated types above. crewman launches the app (via the `run` skill if the project has one, otherwise whatever the project profile's guardrails specify) and visually checks the golden path plus the step's stated UI acceptance criteria before reporting. Record what was checked and what it looked like in the crewman report; inspector's Spec axis checks this account against the acceptance criteria the same way it checks any other claim.
 
 Use the project's test framework and layout (from the project context) for the automated types.
 
@@ -40,10 +40,10 @@ Example eval spec:
 ## Running evals
 
 - Run automated evals with the project's test command. You may filter to a subset while iterating, but the step's full eval set must pass before sign-off.
-- If the full eval set (or the project's CI command) routinely runs longer than a single foreground Bash call can wait, see `long-running-commands.md` before writing your own wait loop — a hand-written `pgrep`-based poll has already caused permanently-stuck background shells in production use.
+- If the full eval set (or the project's CI command) routinely runs longer than a single foreground Bash call can wait, see `long-running-commands.md` before writing your own wait loop.
 - Format changed files with the project's format command before reporting, honouring any "never run bare" caveats in the profile.
 - crewman writes and runs the evals and performs the browser check. inspector may re-run the automated evals read-only as part of its Standards/Spec review. foreman gates on the result.
-- crewman decides test-first vs test-after per step — no fixed rule — but test-first, following the `tdd` skill's red-green-refactor discipline, is preferred where it applies.
+- crewman decides test-first vs test-after per step, but test-first, following the `tdd` skill's red-green-refactor discipline, is preferred where it applies.
 
 ## Mapping from the spec
 

@@ -149,7 +149,7 @@ Every `Reply:` (or the grouped reply) is the complete text that will be posted �
 
 #### Reply style (PR mode)
 
-To keep reviewers' inboxes quiet, the reply style depends on how many **inline review threads** (comments attached to a file/line) the plan responds to, whether actioned or declined:
+The reply style depends on how many **inline review threads** (comments attached to a file/line) the plan responds to, whether actioned or declined:
 
 | Inline threads to respond to | Reply style |
 |------------------------------|-------------|
@@ -161,9 +161,8 @@ To keep reviewers' inboxes quiet, the reply style depends on how many **inline r
 - Review bodies have no thread to reply in, so they are answered with a PR-level comment that @-mentions the reviewer and links the review. In grouped style, fold them into the grouped reply instead of posting a separate comment.
 - A merged item is answered once: on its inline thread (individual style) or as one bullet in the grouped reply. That answer covers all its other sources too — do not reply to them separately.
 - Do not count items the user chose to skip or that are still awaiting a clarification.
-- The grouped reply is one PR-level comment (not a thread reply), so it sends one notification instead of one per thread.
 
-The plan also lists **reviewers to re-request** after publishing (Step 7): every human reviewer, other than `<pr-author>`, with at least one item in this plan that is actioned or declined. Reviewers whose items were all skipped are left out. Never re-request bots (`[bot]` logins, Copilot, etc.) — re-review by bots is left to the repo settings/CI.
+The plan also lists **reviewers to re-request** after publishing (Step 7): every human reviewer, other than `<pr-author>`, with at least one item in this plan that is actioned or declined. Reviewers whose items were all skipped are left out. Never re-request bots (`[bot]` logins, Copilot, etc.).
 
 #### Reply file (PR mode)
 
@@ -172,7 +171,7 @@ Write the draft replies to `<reply-file>` = `<tmpdir>/review-replies-pr<number>.
 - the session's scratchpad directory, if the harness provides one (e.g. Claude Code's per-session scratchpad), otherwise
 - a fresh directory created for this run: `mktemp -d -t review-replies.XXXXXX`
 
-Never use a fixed shared path (such as `/tmp/review-replies.md`) — several sessions may be responding to reviews at once.
+Never use a fixed shared path (such as `/tmp/review-replies.md`).
 
 The reply file is the skill's working copy — the text that gets published in Step 7 — not something the user has to open. The user reviews the replies in the plan and asks for changes in the conversation; apply each change to the reply file and show the updated reply text again. (Mention the file's full absolute path once, for anyone who prefers to edit it directly.)
 
@@ -273,20 +272,20 @@ Approval covers everything up to the Summary: the commits, the push, posting the
 
 ### 4. Implement
 
-Hand the work to subagents, one item at a time. You (the main session) only coordinate. You do not edit code yourself, and you pass each subagent everything it needs in its prompt, because it has no access to this conversation.
+Hand the work to subagents, one item at a time. You (the main session) only coordinate. You do not edit code yourself, and you pass each subagent everything it needs in its prompt.
 
-Before the first item, run `git status`. If a file the plan touches already has uncommitted changes, stop and ask. Otherwise the reviewer's diff and commit would mix those changes in.
+Before the first item, run `git status`. If a file the plan touches already has uncommitted changes, stop and ask.
 
-Work through the plan's actioned items top-down (blockers first), **sequentially**. Every item shares the working tree, so never run two items at once. For each item:
+Work through the plan's actioned items top-down (blockers first), **sequentially** — never two at once. For each item:
 
 1. **Implement.** Spawn a fresh `general-purpose` subagent with:
    - the item: its source(s), the reviewer's comment and thread context, the proposed fix, and (PR mode) the approved reply text
    - the files and code it concerns, and the project's conventions (from CLAUDE.md etc.)
    - the test command from the plan
 
-   Brief it to implement **only this item**, add or update tests where the fix changes behaviour, and run the tests relevant to the changed files. This is the only place tests are run. Items are done one after another on the same working tree, so each run also covers the fixes already committed. It must **not** stage, commit or push anything. If the code is not as the plan describes, the fix needs a different approach or other files, or the tests can't be made to pass within this item, it stops and reports instead of improvising. It reports back: changed files, the exact test command, its result (pass/fail counts, and the output of any failure), and any deviations from the proposed fix.
+   Brief it to implement **only this item**, add or update tests where the fix changes behaviour, and run the tests relevant to the changed files. This is the only place tests are run. It must **not** stage, commit or push anything. If the code is not as the plan describes, the fix needs a different approach or other files, or the tests can't be made to pass within this item, it stops and reports instead of improvising. It reports back: changed files, the exact test command, its result (pass/fail counts, and the output of any failure), and any deviations from the proposed fix.
 
-2. **Review and commit.** Spawn a *separate*, fresh `general-purpose` subagent. Never reuse the implementer: the point is a second opinion. Give it the same item details (proposed fix, approved reply text), the implementer's report, and the test command. Brief it to:
+2. **Review and commit.** Spawn a *separate*, fresh `general-purpose` subagent; never reuse the implementer. Give it the same item details (proposed fix, approved reply text), the implementer's report, and the test command. Brief it to:
    - read the diff (`git diff`) and check that it does what the proposed fix says, and (PR mode) everything the approved reply claims; that it stays in scope (nothing unrelated changed, no files outside the item); and that it is correct and follows the repo's conventions
    - check the implementer's reported test run instead of running the tests again: the command is the plan's test command, it covers the changed files, and it passed. If no tests were run, they failed, or they don't cover the change, request changes. When the plan says no test command was found, skip this check
    - on **APPROVE**: stage only this item's files and commit, `git add <file1> <file2> && git commit -m "review: <summary>"`, then report the commit SHA. Never push
@@ -353,8 +352,7 @@ Run this without asking — it was approved with the plan. If any step fails, st
    - **Grouped reply:**
      - `## Grouped reply` with `skip: false` → post it once as a single PR-level comment (e.g. `gh pr comment`); `skip: true` → post nothing
      - for each `## Resolve` entry with `resolve: true` → mark the review thread resolved **without posting a reply** (e.g. GraphQL `resolveReviewThread`); `resolve: false` → leave it open
-     - do not post the grouped comment until the push has succeeded, so the commit SHAs it references exist on the PR
-3. **Re-request review** from every login in `## Re-request review` — one call: `gh pr edit <number> --add-reviewer <login1>,<login2>`. Do this last, after the push and all replies have gone through, so the reviewer is notified only once there is something to look at. If `reviewers:` is empty, skip this step. If a reply or the push failed, do not re-request — report the failure instead.
+3. **Re-request review** from every login in `## Re-request review` — one call: `gh pr edit <number> --add-reviewer <login1>,<login2>`. Do this last, after the push and all replies have gone through. If `reviewers:` is empty, skip this step. If a reply or the push failed, do not re-request — report the failure instead.
 4. Delete `<reply-file>` (and the `mktemp` directory, if one was created) — only once everything above succeeded; after a failure, keep it so the remaining replies can be posted from it
 
 #### Local mode
@@ -398,7 +396,7 @@ If any comments were rejected, list them:
 - Keep commits small and scoped to the item being addressed; stage only the files changed for each finding. Only the reviewer subagent commits, and only after approving
 - Do not rewrite unrelated code while addressing review findings
 - If a fix introduces risk, flag it to the user before implementing
-- **PR mode:** when responding to more than 3 inline threads, never post per-thread replies — one grouped PR-level comment plus "resolved" status only, to minimise notification emails
+- **PR mode:** when responding to more than 3 inline threads, never post per-thread replies — one grouped PR-level comment plus "resolved" status only
 - The reply file lives in the session's scratchpad (or a per-run `mktemp -d` directory), never a fixed shared path, and must never be staged or committed
 - **Local mode:** do not push — the user decides when to push
 - Never auto-resolve a comment flagged as "likely already addressed" — always confirm with the user first
